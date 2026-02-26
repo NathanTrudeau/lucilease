@@ -1,0 +1,13 @@
+services:
+  lucilease:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: lucilease
+    restart: unless-stopped
+    environment:
+      LUCILEASE_NAME: "Lucilease"
+      POLL_SECONDS: "5"
+    volumes:
+      - ./data:/data
+      - ./fixtures:/fixtures:ro

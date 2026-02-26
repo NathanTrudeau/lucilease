@@ -1,0 +1,12 @@
+mode: fixture
+poll_seconds: 10
+
+features:
+  draft_only: true
+  followups: true
+
+salesforce:
+  enabled: false   # stub only for now
+
+gmail:
+  enabled: false   # fixture only for now
