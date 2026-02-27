@@ -281,11 +281,28 @@
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
-    .tag.new     { background: rgba(108,99,255,0.2); color: var(--accent2); }
-    .tag.handled { background: rgba(34,197,94,0.15); color: var(--green); }
-    .tag.active  { background: rgba(34,197,94,0.15); color: var(--green); }
-    .tag.rental  { background: rgba(245,158,11,0.15); color: var(--yellow); }
-    .tag.sale    { background: rgba(239,68,68,0.15); color: var(--red); }
+    .tag.new      { background: rgba(108,99,255,0.2);  color: var(--accent2); }
+    .tag.handled  { background: rgba(34,197,94,0.15);  color: var(--green); }
+    .tag.active   { background: rgba(34,197,94,0.15);  color: var(--green); }
+    .tag.inactive { background: rgba(100,116,139,0.2); color: var(--muted); }
+    .tag.closed   { background: rgba(239,68,68,0.15);  color: var(--red); }
+    .tag.tbd      { background: rgba(245,158,11,0.18); color: var(--yellow); }
+    .tag.rental   { background: rgba(245,158,11,0.15); color: var(--yellow); }
+    .tag.sale     { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+    /* Tight table */
+    table.tight td, table.tight th { padding: 8px 10px; }
+    .notes-cell {
+      max-width: 160px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* Sort button active */
+    button.sort-active { background: rgba(108,99,255,0.2); color: var(--accent2); }
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -447,46 +464,7 @@
 </div>
 
 <!-- ── Add Property Modal ── -->
-<div class="modal-overlay" id="property-modal">
-  <div class="modal">
-    <h3>🏢 Add Property</h3>
-    <div class="form-group">
-      <label>Address</label>
-      <input id="prop-address" type="text" placeholder="123 Main St, Santa Barbara, CA" />
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Type</label>
-        <select id="prop-type">
-          <option value="rental">Rental</option>
-          <option value="sale">For Sale</option>
-        </select>
-      </div>
-      <div class="form-group" id="prop-price-group">
-        <label>Monthly Rent ($)</label>
-        <input id="prop-price-monthly" type="number" placeholder="3500" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Bedrooms</label>
-        <input id="prop-bedrooms" type="number" placeholder="2" />
-      </div>
-      <div class="form-group">
-        <label>Bathrooms</label>
-        <input id="prop-bathrooms" type="number" step="0.5" placeholder="1.5" />
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Notes</label>
-      <textarea id="prop-notes" placeholder="Pet-friendly, parking included, near downtown..."></textarea>
-    </div>
-    <div class="modal-footer">
-      <button class="secondary" onclick="closeModal('property-modal')">Cancel</button>
-      <button onclick="submitProperty()">Add Property</button>
-    </div>
-  </div>
-</div>
+<!-- property-modal replaced by property-edit-modal -->
 
 <!-- ── Agent Profile Modal ── -->
 <div class="modal-overlay" id="profile-modal">
@@ -566,6 +544,7 @@
       <div class="form-group">
         <label>Status</label>
         <select id="client-edit-status">
+          <option value="tbd">TBD</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="closed">Closed</option>
@@ -593,6 +572,75 @@
     <div class="modal-footer">
       <button class="secondary" onclick="closeModal('client-edit-modal')">Cancel</button>
       <button onclick="saveClient()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Property Modal ── -->
+<div class="modal-overlay" id="property-edit-modal">
+  <div class="modal" style="width:520px">
+    <h3 id="property-edit-title">🏢 Add Property</h3>
+    <input type="hidden" id="prop-edit-id" value="" />
+    <div class="form-group">
+      <label>Address</label>
+      <input id="prop-edit-address" type="text" placeholder="123 Main St, Santa Barbara, CA" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type</label>
+        <select id="prop-edit-type">
+          <option value="rental">Rental</option>
+          <option value="sale">For Sale</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="prop-edit-status">
+          <option value="tbd">TBD</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Monthly Rent ($)</label>
+        <input id="prop-edit-price-monthly" type="number" placeholder="3500" />
+      </div>
+      <div class="form-group">
+        <label>Sale Price ($)</label>
+        <input id="prop-edit-price-sale" type="number" placeholder="650000" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Bedrooms</label>
+        <input id="prop-edit-bedrooms" type="number" placeholder="2" />
+      </div>
+      <div class="form-group">
+        <label>Bathrooms</label>
+        <input id="prop-edit-bathrooms" type="number" step="0.5" placeholder="1.5" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="prop-edit-notes" placeholder="Pet-friendly, parking included..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('property-edit-modal')">Cancel</button>
+      <button onclick="saveProperty()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── View Notes Modal ── -->
+<div class="modal-overlay" id="notes-modal">
+  <div class="modal" style="width:460px">
+    <h3 id="notes-modal-title">📝 Notes</h3>
+    <div id="notes-modal-body" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:360px;overflow-y:auto;color:var(--text)"></div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('notes-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -805,8 +853,16 @@
       <div class="header-actions"><button onclick="openEditClient({})">+ Add Client</button></div>
     </header>
     <div class="content">
+      <!-- Summary bar -->
+      <div id="clients-summary" class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+      <!-- Sort controls -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted)">Sort:</span>
+        <button class="secondary" id="csort-status" onclick="setClientSort('status')" style="font-size:12px;padding:5px 10px">Status ↕</button>
+        <button class="secondary" id="csort-first"  onclick="setClientSort('first')"  style="font-size:12px;padding:5px 10px">First Name ↕</button>
+        <button class="secondary" id="csort-last"   onclick="setClientSort('last')"   style="font-size:12px;padding:5px 10px">Last Name ↕</button>
+      </div>
       <div class="panel">
-        <div class="panel-header">All Clients</div>
         <div id="clients-container">
           <div class="empty-state"><div class="icon">👥</div><p>No clients yet.</p></div>
         </div>
@@ -818,11 +874,19 @@
   <div id="page-properties" class="page">
     <header>
       <div><h2>Properties</h2><p>Your active listings</p></div>
-      <div class="header-actions"><button onclick="openModal('property-modal')">+ Add Property</button></div>
+      <div class="header-actions"><button onclick="openAddPropertyModal()">+ Add Property</button></div>
     </header>
     <div class="content">
+      <!-- Summary bar -->
+      <div id="props-summary" class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+      <!-- Sort controls -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted)">Sort:</span>
+        <button class="secondary" id="psort-status"  onclick="setPropSort('status')"  style="font-size:12px;padding:5px 10px">Status ↕</button>
+        <button class="secondary" id="psort-address" onclick="setPropSort('address')" style="font-size:12px;padding:5px 10px">Address ↕</button>
+        <button class="secondary" id="psort-price"   onclick="setPropSort('price')"   style="font-size:12px;padding:5px 10px">Price ↕</button>
+      </div>
       <div class="panel">
-        <div class="panel-header">Active Listings</div>
         <div id="properties-container">
           <div class="empty-state"><div class="icon">🏢</div><p>No properties yet.</p></div>
         </div>
@@ -1137,69 +1201,258 @@
     btn.disabled = false;
   }
 
+  // ── Status helpers ────────────────────────────────────────────────────────
+  const STATUS_ORDER = { tbd: 0, active: 1, inactive: 2, closed: 3 };
+  function statusTag(s) {
+    return `<span class="tag ${s || 'active'}">${s || 'active'}</span>`;
+  }
+
   // ── Clients ───────────────────────────────────────────────────────────────
-  async function loadClients() {
+  let _clientsCache = [];
+  let _clientSort   = { field: 'status', dir: 1 };
+
+  function setClientSort(field) {
+    if (_clientSort.field === field) _clientSort.dir *= -1;
+    else _clientSort = { field, dir: 1 };
+    document.querySelectorAll('[id^="csort-"]').forEach(b => b.classList.remove('sort-active'));
+    document.getElementById(`csort-${field}`)?.classList.add('sort-active');
+    renderClients();
+  }
+
+  function sortClients(clients) {
+    return [...clients].sort((a, b) => {
+      const { field, dir } = _clientSort;
+      if (field === 'status') {
+        const diff = (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+      }
+      if (field === 'first') {
+        const af = a.name.split(' ')[0] || '', bf = b.name.split(' ')[0] || '';
+        return dir * af.localeCompare(bf);
+      }
+      if (field === 'last') {
+        const ap = a.name.split(' '), bp = b.name.split(' ');
+        const al = ap[ap.length-1] || '', bl = bp[bp.length-1] || '';
+        return dir * al.localeCompare(bl);
+      }
+      return 0;
+    });
+  }
+
+  function renderClientSummary(clients) {
+    const counts = { tbd: 0, active: 0, inactive: 0, closed: 0 };
+    clients.forEach(c => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    const items = [
+      { label: 'TBD',      key: 'tbd',      color: 'var(--yellow)' },
+      { label: 'Active',   key: 'active',   color: 'var(--green)'  },
+      { label: 'Inactive', key: 'inactive', color: 'var(--muted)'  },
+      { label: 'Closed',   key: 'closed',   color: 'var(--red)'    },
+    ];
+    document.getElementById('clients-summary').innerHTML = items.map(i => `
+      <div class="stat-card">
+        <div class="label">${i.label}</div>
+        <div class="value" style="font-size:24px;color:${i.color}">${counts[i.key] || 0}</div>
+        <div class="sub">Clients</div>
+      </div>`).join('');
+  }
+
+  function renderClients() {
     const container = document.getElementById('clients-container');
+    const clients = sortClients(_clientsCache);
+    if (!clients.length) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>No clients yet.</p></div>`;
+      return;
+    }
+    container.innerHTML = `
+      <table class="tight">
+        <thead><tr>
+          <th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Notes</th><th>Added</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${clients.map(c => {
+            const notes = (c.notes || '').trim();
+            const notePreview = notes.length > 45 ? notes.slice(0, 45) + '…' : notes;
+            return `
+            <tr id="client-row-${c.id}">
+              <td style="white-space:nowrap;font-weight:500">${c.name}</td>
+              <td><a href="mailto:${c.email}" style="color:var(--accent2);font-size:12px">${c.email || '—'}</a></td>
+              <td style="font-size:12px;white-space:nowrap">${c.phone || '—'}</td>
+              <td>${statusTag(c.status)}</td>
+              <td class="notes-cell">
+                ${notePreview || '<span style="color:var(--border)">—</span>'}
+                ${notes.length > 45 ? `<button class="secondary" onclick="viewNotes('${c.name.replace(/'/g,"\\'")}', \`${notes.replace(/`/g,'\\`')}\`)" style="font-size:10px;padding:2px 6px;margin-left:4px">View</button>` : ''}
+              </td>
+              <td style="color:var(--muted);font-size:11px;white-space:nowrap">${formatDate(c.created_at)}</td>
+              <td>
+                <div class="actions">
+                  <button class="secondary" onclick='openEditClient(${JSON.stringify(c)})' style="font-size:12px;padding:5px 10px">Edit</button>
+                  <button class="danger" onclick="deleteClient(${c.id}, '${c.name.replace(/'/g,"\\'")}')">✕</button>
+                </div>
+              </td>
+            </tr>`}).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function loadClients() {
     try {
       const r = await fetch('/api/clients');
-      const clients = await r.json();
-      if (!clients.length) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>No clients yet.</p></div>`;
-        return;
-      }
-      container.innerHTML = `
-        <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Added</th><th></th></tr></thead>
-          <tbody>
-            ${clients.map(c => `
-              <tr id="client-row-${c.id}">
-                <td>${c.name}</td>
-                <td><a href="mailto:${c.email}" style="color:var(--accent2)">${c.email || '—'}</a></td>
-                <td>${c.phone || '—'}</td>
-                <td><span class="tag active">${c.status}</span></td>
-                <td style="color:var(--muted);font-size:12px">${formatDate(c.created_at)}</td>
-                <td>
-                  <div class="actions">
-                    <button class="secondary" onclick='openEditClient(${JSON.stringify(c)})'>Edit</button>
-                    <button class="danger" onclick="deleteClient(${c.id}, '${c.name.replace(/'/g,"\\'")}')">Remove</button>
-                  </div>
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>`;
+      _clientsCache = await r.json();
+      renderClientSummary(_clientsCache);
+      renderClients();
     } catch(e) {
-      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
+      document.getElementById('clients-container').innerHTML =
+        `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
     }
   }
 
+  function viewNotes(name, notes) {
+    document.getElementById('notes-modal-title').textContent = `📝 ${name} — Notes`;
+    document.getElementById('notes-modal-body').textContent = notes;
+    openModal('notes-modal');
+  }
+
   // ── Properties ────────────────────────────────────────────────────────────
-  async function loadProperties() {
+  let _propsCache = [];
+  let _propSort   = { field: 'status', dir: 1 };
+
+  function setPropSort(field) {
+    if (_propSort.field === field) _propSort.dir *= -1;
+    else _propSort = { field, dir: 1 };
+    document.querySelectorAll('[id^="psort-"]').forEach(b => b.classList.remove('sort-active'));
+    document.getElementById(`psort-${field}`)?.classList.add('sort-active');
+    renderProperties();
+  }
+
+  function sortProps(props) {
+    return [...props].sort((a, b) => {
+      const { field, dir } = _propSort;
+      if (field === 'status') {
+        const diff = (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1);
+        return diff !== 0 ? diff : a.address.localeCompare(b.address);
+      }
+      if (field === 'address') return dir * a.address.localeCompare(b.address);
+      if (field === 'price') {
+        const ap = a.price_monthly || a.price_sale || 0;
+        const bp = b.price_monthly || b.price_sale || 0;
+        return dir * (ap - bp);
+      }
+      return 0;
+    });
+  }
+
+  function renderPropSummary(props) {
+    const counts = { tbd: 0, active: 0, inactive: 0, closed: 0 };
+    props.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
+    const items = [
+      { label: 'TBD',      key: 'tbd',      color: 'var(--yellow)' },
+      { label: 'Active',   key: 'active',   color: 'var(--green)'  },
+      { label: 'Inactive', key: 'inactive', color: 'var(--muted)'  },
+      { label: 'Closed',   key: 'closed',   color: 'var(--red)'    },
+    ];
+    document.getElementById('props-summary').innerHTML = items.map(i => `
+      <div class="stat-card">
+        <div class="label">${i.label}</div>
+        <div class="value" style="font-size:24px;color:${i.color}">${counts[i.key] || 0}</div>
+        <div class="sub">Properties</div>
+      </div>`).join('');
+  }
+
+  function renderProperties() {
     const container = document.getElementById('properties-container');
+    const props = sortProps(_propsCache);
+    if (!props.length) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🏢</div><p>No properties yet.</p></div>`;
+      return;
+    }
+    container.innerHTML = `
+      <table class="tight">
+        <thead><tr>
+          <th>Address</th><th>Type</th><th>Bd/Ba</th><th>Price</th><th>Status</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${props.map(p => {
+            const notes = (p.notes || '').trim();
+            const notePreview = notes.length > 35 ? notes.slice(0, 35) + '…' : notes;
+            return `
+            <tr>
+              <td style="font-weight:500;font-size:12px">${p.address}</td>
+              <td><span class="tag ${p.type}">${p.type}</span></td>
+              <td style="font-size:12px;white-space:nowrap">${p.bedrooms || '—'}bd / ${p.bathrooms || '—'}ba</td>
+              <td style="font-size:12px;white-space:nowrap">${p.price_monthly ? '$' + p.price_monthly.toLocaleString() + '/mo' : p.price_sale ? '$' + p.price_sale.toLocaleString() : '—'}</td>
+              <td>${statusTag(p.status)}</td>
+              <td class="notes-cell">
+                ${notePreview || '<span style="color:var(--border)">—</span>'}
+                ${notes.length > 35 ? `<button class="secondary" onclick="viewNotes('${p.address.replace(/'/g,"\\'")}', \`${notes.replace(/`/g,'\\`')}\`)" style="font-size:10px;padding:2px 6px;margin-left:4px">View</button>` : ''}
+              </td>
+              <td>
+                <div class="actions">
+                  <button class="secondary" onclick='openEditProperty(${JSON.stringify(p)})' style="font-size:12px;padding:5px 10px">Edit</button>
+                  <button class="danger" onclick="deleteProperty(${p.id}, '${p.address.replace(/'/g,"\\'")}')">✕</button>
+                </div>
+              </td>
+            </tr>`}).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function loadProperties() {
     try {
       const r = await fetch('/api/properties');
-      const props = await r.json();
-      if (!props.length) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">🏢</div><p>No properties yet.</p></div>`;
-        return;
-      }
-      container.innerHTML = `
-        <table>
-          <thead><tr><th>Address</th><th>Type</th><th>Bed/Bath</th><th>Price</th><th>Status</th></tr></thead>
-          <tbody>
-            ${props.map(p => `
-              <tr>
-                <td>${p.address}</td>
-                <td><span class="tag ${p.type}">${p.type}</span></td>
-                <td>${p.bedrooms || '—'} bd / ${p.bathrooms || '—'} ba</td>
-                <td>${p.price_monthly ? '$' + p.price_monthly.toLocaleString() + '/mo' :
-                     p.price_sale    ? '$' + p.price_sale.toLocaleString() : '—'}</td>
-                <td><span class="tag active">${p.status}</span></td>
-              </tr>`).join('')}
-          </tbody>
-        </table>`;
+      _propsCache = await r.json();
+      renderPropSummary(_propsCache);
+      renderProperties();
     } catch(e) {
-      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
+      document.getElementById('properties-container').innerHTML =
+        `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
     }
+  }
+
+  function openAddPropertyModal() { openEditProperty({}); }
+
+  function openEditProperty(p) {
+    document.getElementById('prop-edit-id').value              = p.id || '';
+    document.getElementById('prop-edit-address').value         = p.address || '';
+    document.getElementById('prop-edit-type').value            = p.type    || 'rental';
+    document.getElementById('prop-edit-status').value          = p.status  || 'active';
+    document.getElementById('prop-edit-price-monthly').value   = p.price_monthly || '';
+    document.getElementById('prop-edit-price-sale').value      = p.price_sale    || '';
+    document.getElementById('prop-edit-bedrooms').value        = p.bedrooms  || '';
+    document.getElementById('prop-edit-bathrooms').value       = p.bathrooms || '';
+    document.getElementById('prop-edit-notes').value           = p.notes    || '';
+    document.getElementById('property-edit-title').textContent = p.id ? '🏢 Edit Property' : '🏢 Add Property';
+    openModal('property-edit-modal');
+  }
+
+  async function saveProperty() {
+    const id = document.getElementById('prop-edit-id').value;
+    const body = {
+      address:       document.getElementById('prop-edit-address').value.trim(),
+      type:          document.getElementById('prop-edit-type').value,
+      status:        document.getElementById('prop-edit-status').value,
+      price_monthly: parseInt(document.getElementById('prop-edit-price-monthly').value) || null,
+      price_sale:    parseInt(document.getElementById('prop-edit-price-sale').value)    || null,
+      bedrooms:      parseInt(document.getElementById('prop-edit-bedrooms').value)      || null,
+      bathrooms:     parseFloat(document.getElementById('prop-edit-bathrooms').value)   || null,
+      notes:         document.getElementById('prop-edit-notes').value.trim() || null,
+    };
+    if (!body.address) { alert('Address is required.'); return; }
+
+    const url    = id ? `/api/properties/${id}` : '/api/properties';
+    const method = id ? 'PATCH' : 'POST';
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) { alert('Save failed: ' + (d.error || 'unknown')); return; }
+    closeModal('property-edit-modal');
+    await loadProperties();
+    await refreshStats();
+  }
+
+  async function deleteProperty(id, address) {
+    if (!confirm(`Remove "${address}"?`)) return;
+    await fetch(`/api/properties/${id}`, { method: 'DELETE' });
+    await loadProperties();
+    await refreshStats();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

@@ -89,13 +89,20 @@ async def stats():
     leads_new   = cur.execute("SELECT COUNT(*) FROM leads WHERE status='new'").fetchone()[0]
     leads_total = cur.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
     clients     = cur.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
-    properties  = cur.execute("SELECT COUNT(*) FROM properties WHERE status='active'").fetchone()[0]
+    properties  = cur.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
+
+    # Breakdowns for summary bars
+    client_rows = cur.execute("SELECT status, COUNT(*) as n FROM clients GROUP BY status").fetchall()
+    prop_rows   = cur.execute("SELECT status, COUNT(*) as n FROM properties GROUP BY status").fetchall()
     conn.close()
+
     return {
-        "leads_new":   leads_new,
-        "leads_total": leads_total,
-        "clients":     clients,
-        "properties":  properties,
+        "leads_new":    leads_new,
+        "leads_total":  leads_total,
+        "clients":      clients,
+        "properties":   properties,
+        "clients_by_status":    {r["status"]: r["n"] for r in client_rows},
+        "properties_by_status": {r["status"]: r["n"] for r in prop_rows},
     }
 
 
@@ -481,7 +488,7 @@ async def delete_client(client_id: int):
 async def get_properties():
     conn = get_conn()
     rows = conn.execute(
-        "SELECT * FROM properties WHERE status='active' ORDER BY created_at DESC"
+        "SELECT * FROM properties ORDER BY created_at DESC"
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -494,6 +501,7 @@ class PropertyIn(BaseModel):
     bathrooms:     Optional[float] = None
     price_monthly: Optional[int] = None
     price_sale:    Optional[int] = None
+    status:        Optional[str] = "active"
     notes:         Optional[str] = None
 
 
@@ -501,12 +509,38 @@ class PropertyIn(BaseModel):
 async def add_property(prop: PropertyIn):
     now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
-    conn.execute("""
+    cur = conn.execute("""
         INSERT INTO properties
             (address, type, bedrooms, bathrooms, price_monthly, price_sale, status, notes, created_at, updated_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)
     """, (prop.address, prop.type, prop.bedrooms, prop.bathrooms,
-          prop.price_monthly, prop.price_sale, "active", prop.notes, now, now))
+          prop.price_monthly, prop.price_sale, prop.status or "active", prop.notes, now, now))
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return {"ok": True, "id": new_id}
+
+
+@app.patch("/api/properties/{prop_id}")
+async def update_property(prop_id: int, prop: PropertyIn):
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute("""
+        UPDATE properties SET address=?, type=?, bedrooms=?, bathrooms=?,
+            price_monthly=?, price_sale=?, status=?, notes=?, updated_at=?
+        WHERE id=?
+    """, (prop.address, prop.type, prop.bedrooms, prop.bathrooms,
+          prop.price_monthly, prop.price_sale, prop.status or "active",
+          prop.notes, now, prop_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/properties/{prop_id}")
+async def delete_property(prop_id: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM properties WHERE id=?", (prop_id,))
     conn.commit()
     conn.close()
     return {"ok": True}
