@@ -5,9 +5,10 @@ services:
       dockerfile: ./docker/Dockerfile
     container_name: lucilease
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     environment:
-      LUCILEASE_NAME: "Lucilease"
-      POLL_SECONDS: "5"
+      POLL_SECONDS: "300"
     volumes:
       - ./data:/data
       - ./fixtures:/fixtures:ro
