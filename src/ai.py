@@ -89,37 +89,39 @@ def draft_reply(lead_id: int) -> dict:
     if lead.get("budget_monthly_usd"):
         budget_ctx = f"Their stated budget is ${lead['budget_monthly_usd']:,}/month."
 
+    signature = profile.get("agent_signature", "").strip()
+
     prompt = f"""You are {agent_name}, a real estate agent{f' at {agent_company}' if agent_company else ''}.
-Your reply tone should be: {agent_tone}.
+Tone: {agent_tone}.
 
-You received an inquiry from a potential client. Write a professional, personalized reply email.
+A potential client emailed you. Write a SHORT, professional reply — no fluff, no filler.
 
-Client details:
+Client inquiry:
 - Name: {lead.get('name') or 'the sender'}
-- Email: {lead['from_email']}
-- Subject of their email: {lead.get('subject') or 'N/A'}
-- Their message excerpt: {lead.get('body_excerpt') or 'N/A'}
+- Subject: {lead.get('subject') or 'N/A'}
+- Message: {lead.get('body_excerpt') or 'N/A'}
 - {budget_ctx}
 {props_text}
 
-Instructions:
-- Greet them by first name if you have it.
-- Acknowledge what they're looking for specifically.
-- If you have matching properties, briefly mention 1-2 relevant ones.
-- Offer to schedule a showing or a call.
-- Keep it concise — 3 to 5 short paragraphs max.
-- Sign off with your name and company.
-- Do NOT include a subject line in the body — just the email body text.
-- Do NOT use markdown formatting — plain text only.
+Rules:
+- Maximum 3 short paragraphs. Aim for under 120 words total.
+- First paragraph: warm one-line greeting + acknowledge their specific need.
+- Second paragraph: if a matching property exists, mention it in one sentence. Otherwise skip.
+- Third paragraph: one clear call to action (schedule a showing or quick call).
+- Do NOT use "I hope this email finds you well" or any filler openers.
+- Do NOT include a subject line or signature — those are added separately.
+- Plain text only, no markdown.
 """
 
     response = _claude().messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=600,
+        max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
 
     body    = response.content[0].text.strip()
+    if signature:
+        body = body + "\n\n" + signature
     subject = f"Re: {lead.get('subject') or 'Your Inquiry'}"
 
     # Save draft to DB

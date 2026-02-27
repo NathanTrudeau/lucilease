@@ -161,9 +161,10 @@ async def manual_poll():
 # ── Agent profile ─────────────────────────────────────────────────────────────
 
 class AgentProfile(BaseModel):
-    agent_name:    str
-    agent_company: Optional[str] = ""
-    agent_tone:    Optional[str] = "professional and warm"
+    agent_name:      str
+    agent_company:   Optional[str] = ""
+    agent_tone:      Optional[str] = "professional and warm"
+    agent_signature: Optional[str] = ""
 
 
 @app.get("/api/profile")
@@ -179,6 +180,31 @@ async def save_profile(profile: AgentProfile):
     return {"ok": True}
 
 
+# ── Gmail account info ────────────────────────────────────────────────────────
+
+@app.get("/api/gmail-account")
+async def gmail_account():
+    creds = gm.get_credentials()
+    if not creds:
+        return {"email": None}
+    try:
+        from googleapiclient.discovery import build as gbuild
+        service = gbuild("gmail", "v1", credentials=creds, cache_discovery=False)
+        profile = service.users().getProfile(userId="me").execute()
+        return {"email": profile.get("emailAddress")}
+    except Exception as e:
+        return {"email": None, "error": str(e)}
+
+
+@app.delete("/auth/gmail")
+async def disconnect_gmail():
+    """Disconnect Gmail by deleting the stored token."""
+    token = gm.TOKEN_FILE
+    if token.exists():
+        token.unlink()
+    return {"ok": True}
+
+
 # ── Clients ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/clients")
@@ -187,6 +213,15 @@ async def get_clients():
     rows = conn.execute("SELECT * FROM clients ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.delete("/api/clients/{client_id}")
+async def delete_client(client_id: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM clients WHERE id=?", (client_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 # ── Properties ────────────────────────────────────────────────────────────────

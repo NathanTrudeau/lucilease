@@ -19,6 +19,60 @@
       --sidebar-w: 220px;
     }
 
+    /* ── Theme swatches ── */
+    .color-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .swatch {
+      width: 100%; aspect-ratio: 1;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 3px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .swatch:hover { transform: scale(1.1); }
+    .swatch.selected { border-color: var(--text); }
+
+    /* ── Signature toolbar ── */
+    .sig-toolbar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .sig-toolbar button {
+      background: var(--border);
+      color: var(--text);
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 5px;
+      min-width: unset;
+    }
+    .sig-toolbar select {
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .sig-editor {
+      min-height: 80px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      line-height: 1.5;
+    }
+    .sig-editor:focus { border-color: var(--accent); }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -406,15 +460,17 @@
 
 <!-- ── Agent Profile Modal ── -->
 <div class="modal-overlay" id="profile-modal">
-  <div class="modal">
+  <div class="modal" style="width:520px">
     <h3>👤 Agent Profile</h3>
-    <div class="form-group">
-      <label>Your Name</label>
-      <input id="profile-name" type="text" placeholder="Jane Smith" />
-    </div>
-    <div class="form-group">
-      <label>Company</label>
-      <input id="profile-company" type="text" placeholder="Santa Barbara Realty" />
+    <div class="form-row">
+      <div class="form-group">
+        <label>Your Name</label>
+        <input id="profile-name" type="text" placeholder="Jane Smith" />
+      </div>
+      <div class="form-group">
+        <label>Company</label>
+        <input id="profile-company" type="text" placeholder="Santa Barbara Realty" />
+      </div>
     </div>
     <div class="form-group">
       <label>Reply Tone</label>
@@ -425,9 +481,49 @@
         <option value="formal and corporate">Formal &amp; Corporate</option>
       </select>
     </div>
+    <div class="form-group">
+      <label>Custom Signature</label>
+      <div class="sig-toolbar">
+        <button type="button" onclick="sigFmt('bold')"><b>B</b></button>
+        <button type="button" onclick="sigFmt('italic')"><i>I</i></button>
+        <button type="button" onclick="sigFmt('underline')"><u>U</u></button>
+        <select onchange="sigFmt('fontSize', this.value); this.value=''">
+          <option value="">Size</option>
+          <option value="1">Small</option>
+          <option value="3">Normal</option>
+          <option value="4">Large</option>
+          <option value="5">X-Large</option>
+        </select>
+        <select onchange="sigFmt('fontName', this.value); this.value=''">
+          <option value="">Font</option>
+          <option value="Arial">Arial</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Helvetica">Helvetica</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+        </select>
+      </div>
+      <div id="sig-editor" class="sig-editor" contenteditable="true"
+           placeholder="e.g. Jane Smith | Santa Barbara Realty | (805) 555-0100"></div>
+    </div>
     <div class="modal-footer">
       <button class="secondary" onclick="closeModal('profile-modal')">Cancel</button>
       <button onclick="saveProfile()">Save Profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Theme Picker Modal ── -->
+<div class="modal-overlay" id="theme-modal">
+  <div class="modal" style="width:360px">
+    <h3>🎨 Theme Color</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Choose an accent color for the interface.</p>
+    <p style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Soft</p>
+    <div class="color-grid" id="soft-swatches"></div>
+    <p style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin:16px 0 8px">Vivid</p>
+    <div class="color-grid" id="vivid-swatches"></div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('theme-modal')">Done</button>
     </div>
   </div>
 </div>
@@ -561,11 +657,11 @@
         <div class="panel-header">Gmail Connection</div>
         <div class="setting-row">
           <div>
-            <div class="setting-label">Google Account</div>
-            <div class="setting-desc">Connect Gmail to start reading leads and drafting replies</div>
+            <div class="setting-label">Connected Account</div>
+            <div class="setting-desc" id="gmail-account-display">Checking...</div>
           </div>
           <div id="gmail-connect-btn">
-            <button class="secondary" disabled>Checking...</button>
+            <button class="secondary" disabled>...</button>
           </div>
         </div>
         <div class="setting-row">
@@ -578,11 +674,11 @@
       </div>
 
       <div class="panel settings-section">
-        <div class="panel-header">Coming Soon</div>
+        <div class="panel-header">Agent &amp; AI</div>
         <div class="setting-row">
           <div>
             <div class="setting-label">Agent Profile</div>
-            <div class="setting-desc">Your name, company, and reply tone for AI-drafted emails</div>
+            <div class="setting-desc">Your name, company, tone, and email signature</div>
           </div>
           <button onclick="openProfileModal()">Edit Profile</button>
         </div>
@@ -592,6 +688,17 @@
             <div class="setting-desc">Connect to schedule appointments from emails</div>
           </div>
           <button class="secondary" disabled>Phase 4</button>
+        </div>
+      </div>
+
+      <div class="panel settings-section">
+        <div class="panel-header">Appearance</div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Theme Color</div>
+            <div class="setting-desc">Customize the accent color of the interface</div>
+          </div>
+          <button onclick="openModal('theme-modal')">🎨 Change Color</button>
         </div>
       </div>
 
@@ -612,6 +719,57 @@
     if (name === 'properties') loadProperties();
   }
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  const SOFT_COLORS  = [
+    { name: 'Lavender', accent: '#c4b5fd', accent2: '#ddd6fe' },
+    { name: 'Sky',      accent: '#93c5fd', accent2: '#bfdbfe' },
+    { name: 'Mint',     accent: '#6ee7b7', accent2: '#a7f3d0' },
+    { name: 'Peach',    accent: '#fca5a5', accent2: '#fecaca' },
+    { name: 'Rose',     accent: '#f9a8d4', accent2: '#fbcfe8' },
+  ];
+  const VIVID_COLORS = [
+    { name: 'Purple',   accent: '#6c63ff', accent2: '#a78bfa' },
+    { name: 'Blue',     accent: '#2563eb', accent2: '#60a5fa' },
+    { name: 'Emerald',  accent: '#059669', accent2: '#34d399' },
+    { name: 'Coral',    accent: '#e11d48', accent2: '#fb7185' },
+    { name: 'Teal',     accent: '#0891b2', accent2: '#22d3ee' },
+  ];
+
+  function applyTheme(accent, accent2) {
+    document.documentElement.style.setProperty('--accent', accent);
+    document.documentElement.style.setProperty('--accent2', accent2);
+    localStorage.setItem('ll-accent',  accent);
+    localStorage.setItem('ll-accent2', accent2);
+  }
+
+  function buildSwatches() {
+    const selected = localStorage.getItem('ll-accent') || '#6c63ff';
+
+    function renderGroup(colors, containerId) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = '';
+      colors.forEach(c => {
+        const s = document.createElement('div');
+        s.className = 'swatch' + (c.accent === selected ? ' selected' : '');
+        s.style.background = c.accent;
+        s.title = c.name;
+        s.onclick = () => {
+          document.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
+          s.classList.add('selected');
+          applyTheme(c.accent, c.accent2);
+        };
+        el.appendChild(s);
+      });
+    }
+    renderGroup(SOFT_COLORS,  'soft-swatches');
+    renderGroup(VIVID_COLORS, 'vivid-swatches');
+  }
+
+  // Apply saved theme on load
+  const savedAccent  = localStorage.getItem('ll-accent');
+  const savedAccent2 = localStorage.getItem('ll-accent2');
+  if (savedAccent && savedAccent2) applyTheme(savedAccent, savedAccent2);
+
   // ── Auth status ───────────────────────────────────────────────────────────
   let isAuthed = false;
 
@@ -621,20 +779,27 @@
       const d = await r.json();
       isAuthed = d.authenticated;
 
-      const dot  = document.getElementById('status-dot');
-      const text = document.getElementById('status-text');
-      const btn  = document.getElementById('gmail-connect-btn');
+      const dot    = document.getElementById('status-dot');
+      const text   = document.getElementById('status-text');
+      const btn    = document.getElementById('gmail-connect-btn');
       const banner = document.getElementById('gmail-banner');
+      const acctEl = document.getElementById('gmail-account-display');
 
       if (isAuthed) {
-        dot.className  = 'status-dot';
+        dot.className    = 'status-dot';
         text.textContent = 'Gmail connected';
-        btn.innerHTML  = '<button class="success" disabled>✓ Connected</button>';
+        btn.innerHTML    = `<button class="danger" onclick="disconnectGmail()">Disconnect</button>
+                            <a class="btn secondary" href="/auth/gmail" style="margin-left:8px">Swap account</a>`;
         banner.innerHTML = '';
+        // Fetch account email
+        const ar = await fetch('/api/gmail-account');
+        const ad = await ar.json();
+        if (ad.email) acctEl.textContent = ad.email;
       } else {
-        dot.className  = 'status-dot offline';
+        dot.className    = 'status-dot offline';
         text.textContent = 'Gmail not connected';
-        btn.innerHTML  = '<a class="btn" href="/auth/gmail">Connect Gmail →</a>';
+        btn.innerHTML    = '<a class="btn" href="/auth/gmail">Connect Gmail →</a>';
+        if (acctEl) acctEl.textContent = 'Not connected';
         banner.innerHTML = `
           <div class="banner warn">
             ⚠️ Gmail is not connected.
@@ -644,6 +809,12 @@
     } catch(e) {
       console.error('Auth check failed', e);
     }
+  }
+
+  async function disconnectGmail() {
+    if (!confirm('Disconnect Gmail? Lucilease will stop checking for new leads until reconnected.')) return;
+    await fetch('/auth/gmail', { method: 'DELETE' });
+    await checkAuth();
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -779,15 +950,16 @@
       }
       container.innerHTML = `
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Added</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Added</th><th></th></tr></thead>
           <tbody>
             ${clients.map(c => `
-              <tr>
+              <tr id="client-row-${c.id}">
                 <td>${c.name}</td>
                 <td><a href="mailto:${c.email}" style="color:var(--accent2)">${c.email || '—'}</a></td>
                 <td>${c.phone || '—'}</td>
                 <td><span class="tag active">${c.status}</span></td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(c.created_at)}</td>
+                <td><button class="danger" onclick="deleteClient(${c.id}, '${c.name.replace(/'/g,"\\'")}')">Remove</button></td>
               </tr>`).join('')}
           </tbody>
         </table>`;
@@ -936,6 +1108,20 @@
     }
   }
 
+  // ── Delete client ─────────────────────────────────────────────────────────
+  async function deleteClient(id, name) {
+    if (!confirm(`Remove ${name} from your client list?`)) return;
+    await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+    document.getElementById(`client-row-${id}`)?.remove();
+    refreshStats();
+  }
+
+  // ── Signature editor ──────────────────────────────────────────────────────
+  function sigFmt(cmd, val) {
+    document.getElementById('sig-editor').focus();
+    document.execCommand(cmd, false, val || null);
+  }
+
   // ── Agent Profile ─────────────────────────────────────────────────────────
   async function openProfileModal() {
     const r = await fetch('/api/profile');
@@ -943,14 +1129,17 @@
     document.getElementById('profile-name').value    = p.agent_name    || '';
     document.getElementById('profile-company').value = p.agent_company || '';
     document.getElementById('profile-tone').value    = p.agent_tone    || 'professional and warm';
+    // Signature: stored as HTML, render in contenteditable
+    document.getElementById('sig-editor').innerHTML  = p.agent_signature || '';
     openModal('profile-modal');
   }
 
   async function saveProfile() {
     const body = {
-      agent_name:    document.getElementById('profile-name').value.trim(),
-      agent_company: document.getElementById('profile-company').value.trim(),
-      agent_tone:    document.getElementById('profile-tone').value,
+      agent_name:      document.getElementById('profile-name').value.trim(),
+      agent_company:   document.getElementById('profile-company').value.trim(),
+      agent_tone:      document.getElementById('profile-tone').value,
+      agent_signature: document.getElementById('sig-editor').innerHTML.trim(),
     };
     if (!body.agent_name) { alert('Name is required.'); return; }
     await fetch('/api/profile', {
@@ -969,6 +1158,7 @@
   refreshAll();
   loadLeads(); // preload for dashboard recent leads
   setPollDisplay();
+  buildSwatches();
   setInterval(refreshAll, 30000);
 </script>
 </body>
