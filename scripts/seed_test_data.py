@@ -9,8 +9,7 @@ rental inquiries, showing requests, and budget discussions.
 """
 
 import sys
-import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src"))
+sys.path.insert(0, "/app")  # Docker: app code lives at /app
 
 import hashlib, re, json
 from db import init_db, get_conn
