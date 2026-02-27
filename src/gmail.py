@@ -110,10 +110,12 @@ def poll_inbox(label_ids: list[str] = None) -> int:
     new_count = 0
 
     try:
-        query  = "is:unread in:inbox"
-        labels = label_ids or []
+        # Scan last 7 days of inbox (read + unread) — dedup handles repeats
+        query  = "in:inbox newer_than:7d"
+        if label_ids:
+            query += " " + " ".join(f"label:{l}" for l in label_ids)
         result = service.users().messages().list(
-            userId="me", q=query, labelIds=labels, maxResults=50
+            userId="me", q=query, maxResults=100
         ).execute()
 
         messages = result.get("messages", [])

@@ -89,7 +89,8 @@ def draft_reply(lead_id: int) -> dict:
     if lead.get("budget_monthly_usd"):
         budget_ctx = f"Their stated budget is ${lead['budget_monthly_usd']:,}/month."
 
-    signature = profile.get("agent_signature", "").strip()
+    sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
+    signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
 
     prompt = f"""You are {agent_name}, a real estate agent{f' at {agent_company}' if agent_company else ''}.
 Tone: {agent_tone}.

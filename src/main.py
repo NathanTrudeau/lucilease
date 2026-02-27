@@ -161,10 +161,11 @@ async def manual_poll():
 # ── Agent profile ─────────────────────────────────────────────────────────────
 
 class AgentProfile(BaseModel):
-    agent_name:      str
-    agent_company:   Optional[str] = ""
-    agent_tone:      Optional[str] = "professional and warm"
-    agent_signature: Optional[str] = ""
+    agent_name:              str
+    agent_company:           Optional[str] = ""
+    agent_tone:              Optional[str] = "professional and warm"
+    agent_signature:         Optional[str] = ""
+    agent_signature_enabled: Optional[str] = "false"
 
 
 @app.get("/api/profile")
