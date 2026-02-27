@@ -1526,46 +1526,6 @@
     }
   }
 
-  // ── Add Property ──────────────────────────────────────────────────────────
-  document.getElementById('prop-type').addEventListener('change', function() {
-    const label = this.value === 'rental' ? 'Monthly Rent ($)' : 'Sale Price ($)';
-    document.querySelector('#prop-price-group label').textContent = label;
-    document.getElementById('prop-price-monthly').placeholder =
-      this.value === 'rental' ? '3500' : '650000';
-  });
-
-  async function submitProperty() {
-    const type = document.getElementById('prop-type').value;
-    const price = parseInt(document.getElementById('prop-price-monthly').value) || null;
-
-    const body = {
-      address:       document.getElementById('prop-address').value.trim(),
-      type,
-      bedrooms:      parseInt(document.getElementById('prop-bedrooms').value) || null,
-      bathrooms:     parseFloat(document.getElementById('prop-bathrooms').value) || null,
-      price_monthly: type === 'rental' ? price : null,
-      price_sale:    type === 'sale'   ? price : null,
-      notes:         document.getElementById('prop-notes').value.trim() || null,
-    };
-
-    if (!body.address) { alert('Address is required.'); return; }
-
-    const r = await fetch('/api/properties', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const d = await r.json();
-    if (d.ok) {
-      closeModal('property-modal');
-      await loadProperties();
-      await refreshStats();
-      // Clear form
-      ['prop-address','prop-price-monthly','prop-bedrooms','prop-bathrooms','prop-notes']
-        .forEach(id => document.getElementById(id).value = '');
-    }
-  }
-
   // ── Drafts ───────────────────────────────────────────────────────────────
   let _draftsCache = [];
 
