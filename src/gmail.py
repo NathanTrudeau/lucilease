@@ -10,6 +10,7 @@ OAuth notes:
 """
 
 import os
+import re
 import base64
 import email.mime.text
 import pathlib
@@ -29,10 +30,33 @@ from db import get_conn
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 TOKEN_FILE = pathlib.Path("/data/token.json")
 REDIRECT_URI = "http://localhost:8080/auth/callback"
+
+
+def strip_html(html: str) -> str:
+    """Convert HTML (from contenteditable) to clean plain text for email sending."""
+    if not html:
+        return ""
+    # Block-level tags → newlines
+    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"</?(p|div|li|tr)[^>]*>", "\n", text, flags=re.IGNORECASE)
+    # Strip all remaining tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Decode common HTML entities
+    text = (text
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
+            .replace("&#39;", "'")
+            .replace("&quot;", '"'))
+    # Collapse excessive blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _client_config() -> dict:
@@ -196,7 +220,7 @@ def send_gmail_message(creds, to: str, subject: str, body: str,
                        thread_id=None) -> str:
     """Send an email immediately. Returns sent message id."""
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg = email.mime.text.MIMEText(body)
+    msg = email.mime.text.MIMEText(strip_html(body))
     msg["to"] = to
     msg["subject"] = subject
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -210,7 +234,7 @@ def send_gmail_message(creds, to: str, subject: str, body: str,
 def update_gmail_draft(creds, draft_id: str, to: str, subject: str, body: str) -> str:
     """Update an existing Gmail draft. Returns draft id."""
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg = email.mime.text.MIMEText(body)
+    msg = email.mime.text.MIMEText(strip_html(body))
     msg["to"] = to
     msg["subject"] = subject
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -239,7 +263,7 @@ def create_gmail_draft_public(creds, to: str, subject: str, body: str,
 def _create_gmail_draft_impl(creds, to: str, subject: str, body: str,
                               thread_id=None) -> str:
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg = email.mime.text.MIMEText(body)
+    msg = email.mime.text.MIMEText(strip_html(body))
     msg["to"] = to
     msg["subject"] = subject
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()

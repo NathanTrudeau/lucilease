@@ -986,8 +986,12 @@
   async function loadLeads() {
     const container = document.getElementById('leads-container');
     try {
-      const r = await fetch('/api/leads?status=new');
-      const leads = await r.json();
+      const [leadsRes, clientsRes] = await Promise.all([
+        fetch('/api/leads?status=new'),
+        fetch('/api/clients'),
+      ]);
+      const leads = await leadsRes.json();
+      const existingEmails = new Set((await clientsRes.json()).map(c => (c.email || '').toLowerCase()));
 
       document.getElementById('leads-count').textContent =
         leads.length ? `${leads.length} new` : '';
@@ -1018,8 +1022,10 @@
                 <td>
                   <div class="actions">
                     <button onclick="generateDraft(${l.id}, this)">✍ Draft</button>
-                    <button class="success" onclick="addClient(${l.id})">+ Client</button>
-                    <button class="danger" onclick="handleLead(${l.id})">✓ Done</button>
+                    ${existingEmails.has(l.from_email.toLowerCase())
+                      ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
+                      : `<button class="success" onclick="addClient(${l.id})">+ Client</button>`}
+                    <button class="secondary" onclick="handleLead(${l.id})" title="Mark as handled — removes from inbox">✓ Dismiss</button>
                   </div>
                 </td>
               </tr>

@@ -182,7 +182,8 @@ def _create_gmail_draft(creds, to: str, subject: str, body: str,
                         thread_id: Optional[str] = None) -> str:
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    msg = email.mime.text.MIMEText(body)
+    from gmail import strip_html
+    msg = email.mime.text.MIMEText(strip_html(body))
     msg["to"]      = to
     msg["subject"] = subject
 
