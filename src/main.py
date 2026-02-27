@@ -48,10 +48,13 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
+APP_VERSION = "0.3.0"
+
 @app.get("/health")
 async def health():
     return {
         "status":        "ok",
+        "version":       APP_VERSION,
         "authenticated": gm.is_authenticated(),
         "poll_seconds":  POLL_SECS,
         "timestamp":     datetime.datetime.utcnow().isoformat() + "Z",

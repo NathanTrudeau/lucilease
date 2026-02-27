@@ -392,6 +392,7 @@
   <div class="logo">
     <h1>Lucilease</h1>
     <p>Real Estate AI Assistant</p>
+    <p id="app-version" style="margin-top:5px;font-size:10px;color:#3a3d50;font-weight:700;letter-spacing:0.6px">v0.3.0</p>
   </div>
 
   <nav>
@@ -1216,6 +1217,11 @@
   setPollDisplay();
   buildSwatches();
   setInterval(refreshAll, 30000);
+
+  // Pull version from API
+  fetch('/health').then(r => r.json()).then(d => {
+    if (d.version) document.getElementById('app-version').textContent = 'v' + d.version;
+  }).catch(() => {});
 </script>
 </body>
 </html>
