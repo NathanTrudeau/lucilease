@@ -632,7 +632,7 @@
   <div class="modal" style="width:480px;border:1px solid var(--red)">
     <div style="text-align:center;margin-bottom:20px">
       <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-      <h3 style="font-size:18px;color:var(--red)">Send All Drafts?</h3>
+      <h3 style="font-size:18px;color:var(--red)">SEND ALL EMAILS?</h3>
     </div>
     <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.6">
       <strong>Have you reviewed every draft and are happy with them?</strong><br/><br/>
@@ -738,7 +738,7 @@
       <div><h2>Drafts</h2><p>Review, edit, and send your outgoing emails</p></div>
       <div class="header-actions">
         <button onclick="openNewDraftModal()">+ New Draft</button>
-        <button class="danger" id="send-all-btn" onclick="confirmSendAll()">📤 Send All Drafts</button>
+        <button class="danger" id="send-all-btn" onclick="confirmSendAll()" style="font-weight:700;letter-spacing:0.3px">📤 SEND ALL EMAILS</button>
       </div>
     </header>
     <div class="content">
@@ -1285,8 +1285,8 @@
         return;
       }
 
-      const statusColor = { local: 'var(--muted)', gmail_draft: 'var(--accent2)', failed: 'var(--red)' };
-      const statusLabel = { local: '💾 Local', gmail_draft: '📨 Gmail Draft', failed: '❌ Failed' };
+      const statusColor = { local: 'var(--muted)', gmail_draft: 'var(--accent2)', failed: 'var(--red)', duplicate: 'var(--yellow)' };
+      const statusLabel = { local: '💾 Local', gmail_draft: '📨 Gmail Draft', failed: '❌ Failed', duplicate: '⚠️ Duplicate — edit to unlock' };
 
       container.innerHTML = `
         <table>
@@ -1306,7 +1306,8 @@
                 <td>
                   <div class="actions">
                     <button class="secondary" onclick="editDraft(${d.id})">Edit</button>
-                    ${d.status !== 'gmail_draft'
+                    <button class="secondary" onclick="duplicateDraft(${d.id})" title="Duplicate this draft">⧉ Dupe</button>
+                    ${d.status === 'local' || d.status === 'failed'
                       ? `<button class="secondary" onclick="pushDraftToGmail(${d.id}, this)">📨 Gmail</button>`
                       : ''}
                     <button class="danger" onclick="deleteDraft(${d.id})">Delete</button>
@@ -1390,6 +1391,13 @@
     if (!d.ok) alert(`Gmail push failed: ${d.error}`);
   }
 
+  async function duplicateDraft(id) {
+    const r = await fetch(`/api/drafts/${id}/duplicate`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) await loadDrafts();
+    else alert('Duplicate failed: ' + d.error);
+  }
+
   async function deleteDraft(id) {
     if (!confirm('Delete this draft?')) return;
     await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
@@ -1430,9 +1438,11 @@
   async function confirmSendAll() {
     const r = await fetch('/api/drafts');
     const drafts = await r.json();
-    const pending = drafts.filter(d => ['local','gmail_draft','failed'].includes(d.status));
+    const pending   = drafts.filter(d => ['local','gmail_draft','failed'].includes(d.status));
+    const dupeCount = drafts.filter(d => d.status === 'duplicate').length;
     document.getElementById('send-all-count').textContent =
-      `${pending.length} draft${pending.length !== 1 ? 's' : ''} will be sent.`;
+      `${pending.length} email${pending.length !== 1 ? 's' : ''} will be sent.` +
+      (dupeCount ? ` (${dupeCount} duplicate${dupeCount > 1 ? 's' : ''} excluded)` : '');
     openModal('send-all-modal');
   }
 

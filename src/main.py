@@ -228,14 +228,19 @@ async def update_draft(draft_id: int, draft: DraftIn):
         return {"ok": False, "error": "Draft not found"}
 
     row = dict(row)
+    # Auto-promote duplicate → local if subject AND body are now unique
+    new_status = row["status"]
+    if row["status"] == "duplicate":
+        new_status = _check_duplicate_status(conn, draft_id, draft.subject, draft.body)
+
     conn.execute("""
-        UPDATE drafts SET to_email=?, subject=?, body=?, updated_at=? WHERE id=?
-    """, (draft.to_email, draft.subject, draft.body, now, draft_id))
+        UPDATE drafts SET to_email=?, subject=?, body=?, status=?, updated_at=? WHERE id=?
+    """, (draft.to_email, draft.subject, draft.body, new_status, now, draft_id))
     conn.commit()
     conn.close()
 
     # If synced to Gmail drafts, update there too
-    if row.get("gmail_draft_id"):
+    if row.get("gmail_draft_id") and new_status != "duplicate":
         creds = gm.get_credentials()
         if creds:
             try:
@@ -246,7 +251,7 @@ async def update_draft(draft_id: int, draft: DraftIn):
             except Exception as e:
                 print(f"[drafts] Gmail sync failed: {e}")
 
-    return {"ok": True}
+    return {"ok": True, "status": new_status}
 
 
 @app.delete("/api/drafts/{draft_id}")
@@ -261,6 +266,47 @@ async def delete_draft(draft_id: int):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+@app.post("/api/drafts/{draft_id}/duplicate")
+async def duplicate_draft(draft_id: int):
+    """Clone a draft and mark it as a duplicate until subject+body are both changed."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Not found"}
+    row = dict(row)
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    cur = conn.execute("""
+        INSERT INTO drafts (lead_id, to_email, subject, body, status, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?)
+    """, (row.get("lead_id"), row.get("to_email"),
+          row.get("subject"), row.get("body"),
+          "duplicate", now, now))
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": new_id}
+
+
+def _check_duplicate_status(conn, draft_id: int, subject: str, body: str) -> str:
+    """
+    Return 'local' if subject AND body are both unique among all other drafts.
+    Return 'duplicate' otherwise.
+    """
+    others = conn.execute(
+        "SELECT subject, body FROM drafts WHERE id != ? AND status != 'sent'",
+        (draft_id,)
+    ).fetchall()
+    subj_clean = (subject or "").strip().lower()
+    body_clean = (body or "").strip().lower()
+    for other in others:
+        other_subj = (other["subject"] or "").strip().lower()
+        other_body = (other["body"] or "").strip().lower()
+        if subj_clean == other_subj or body_clean == other_body:
+            return "duplicate"
+    return "local"
 
 
 @app.post("/api/drafts/{draft_id}/push-gmail")
