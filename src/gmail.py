@@ -11,6 +11,7 @@ OAuth notes:
 
 import os
 import base64
+import email.mime.text
 import pathlib
 import sqlite3
 from typing import Optional
