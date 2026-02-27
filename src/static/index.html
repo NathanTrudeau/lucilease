@@ -408,6 +408,10 @@
       <span class="icon">📬</span> Inbox
       <span class="badge zero" id="inbox-badge">0</span>
     </a>
+    <a onclick="showPage('drafts', this)">
+      <span class="icon">✍</span> Drafts
+      <span class="badge zero" id="drafts-badge">0</span>
+    </a>
     <a onclick="showPage('clients', this)">
       <span class="icon">👥</span> Clients
     </a>
@@ -564,6 +568,92 @@
   </div>
 </div>
 
+<!-- ── New / Edit Draft Modal ── -->
+<div class="modal-overlay" id="draft-edit-modal">
+  <div class="modal" style="width:600px">
+    <h3 id="draft-edit-title">✍ New Draft</h3>
+    <input type="hidden" id="draft-edit-id" value="" />
+    <div class="form-group">
+      <label>To</label>
+      <div style="display:flex;gap:8px">
+        <input id="draft-edit-to" type="email" placeholder="recipient@email.com" style="flex:1" />
+        <button class="secondary" onclick="openClientPicker()" style="white-space:nowrap">Pick Client</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Subject</label>
+      <input id="draft-edit-subject" type="text" placeholder="Re: Property Inquiry" />
+    </div>
+    <div class="form-group">
+      <label>Body</label>
+      <div class="sig-toolbar">
+        <button type="button" onclick="draftFmt('bold')"><b>B</b></button>
+        <button type="button" onclick="draftFmt('italic')"><i>I</i></button>
+        <button type="button" onclick="draftFmt('underline')"><u>U</u></button>
+        <select onchange="draftFmt('fontSize', this.value); this.value=''">
+          <option value="">Size</option>
+          <option value="1">Small</option>
+          <option value="3">Normal</option>
+          <option value="4">Large</option>
+          <option value="5">X-Large</option>
+        </select>
+        <select onchange="draftFmt('fontName', this.value); this.value=''">
+          <option value="">Font</option>
+          <option value="Arial">Arial</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+        </select>
+      </div>
+      <div id="draft-edit-body" class="sig-editor" contenteditable="true"
+           style="min-height:180px" placeholder="Write your email here..."></div>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('draft-edit-modal')">Cancel</button>
+      <button class="secondary" onclick="saveDraft('local')">💾 Save Local</button>
+      <button onclick="saveDraft('gmail')">📨 Push to Gmail Drafts</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Client Picker Modal ── -->
+<div class="modal-overlay" id="client-picker-modal">
+  <div class="modal" style="width:400px">
+    <h3>👥 Pick a Client</h3>
+    <div id="client-picker-list" style="max-height:300px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('client-picker-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Send All Confirm Modal ── -->
+<div class="modal-overlay" id="send-all-modal">
+  <div class="modal" style="width:480px;border:1px solid var(--red)">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <h3 style="font-size:18px;color:var(--red)">Send All Drafts?</h3>
+    </div>
+    <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.6">
+      <strong>Have you reviewed every draft and are happy with them?</strong><br/><br/>
+      This will send all pending drafts directly to their recipients via Gmail.
+      <strong>This cannot be undone.</strong> Any emails that fail to send will remain
+      in your Drafts tab so you can retry or fix them.
+    </div>
+    <div style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:20px" id="send-all-count">
+      Loading draft count...
+    </div>
+    <div class="modal-footer" style="justify-content:center;gap:16px">
+      <button class="secondary" style="padding:10px 24px" onclick="closeModal('send-all-modal')">
+        Cancel — Go Back and Review
+      </button>
+      <button class="danger" style="padding:10px 24px;background:var(--red);color:#fff" onclick="executeSendAll()">
+        Yes, Send All Now
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Main -->
 <main>
 
@@ -637,6 +727,28 @@
         </div>
         <div id="leads-container">
           <div class="empty-state"><div class="icon">📬</div><p>Loading...</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Drafts ── -->
+  <div id="page-drafts" class="page">
+    <header>
+      <div><h2>Drafts</h2><p>Review, edit, and send your outgoing emails</p></div>
+      <div class="header-actions">
+        <button onclick="openNewDraftModal()">+ New Draft</button>
+        <button class="danger" id="send-all-btn" onclick="confirmSendAll()">📤 Send All Drafts</button>
+      </div>
+    </header>
+    <div class="content">
+      <div class="panel">
+        <div class="panel-header">
+          Pending Drafts
+          <span id="drafts-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        </div>
+        <div id="drafts-container">
+          <div class="empty-state"><div class="icon">✍</div><p>No drafts yet.</p></div>
         </div>
       </div>
     </div>
@@ -750,8 +862,9 @@
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('page-' + name).classList.add('active');
     if (el) el.classList.add('active');
-    if (name === 'inbox')    loadLeads();
-    if (name === 'clients')  loadClients();
+    if (name === 'inbox')      loadLeads();
+    if (name === 'drafts')     loadDrafts();
+    if (name === 'clients')    loadClients();
     if (name === 'properties') loadProperties();
   }
 
@@ -1096,6 +1209,7 @@
       }
 
       btn.textContent = '✓ Drafted';
+      loadDrafts(); // refresh badge
     } catch(e) {
       document.getElementById('draft-modal-content').innerHTML =
         `<p style="color:var(--red);text-align:center;padding:20px">Error: ${e.message}</p>`;
@@ -1142,6 +1256,201 @@
       ['prop-address','prop-price-monthly','prop-bedrooms','prop-bathrooms','prop-notes']
         .forEach(id => document.getElementById(id).value = '');
     }
+  }
+
+  // ── Drafts ───────────────────────────────────────────────────────────────
+  let _draftsCache = [];
+
+  async function loadDrafts() {
+    const container = document.getElementById('drafts-container');
+    try {
+      const r = await fetch('/api/drafts');
+      _draftsCache = await r.json();
+      const drafts = _draftsCache;
+
+      const badge = document.getElementById('drafts-badge');
+      badge.textContent = drafts.length;
+      badge.className   = 'badge' + (drafts.length > 0 ? '' : ' zero');
+      document.getElementById('drafts-count').textContent =
+        drafts.length ? `${drafts.length} pending` : '';
+
+      if (!drafts.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">✍</div><p>No pending drafts. Click "+ New Draft" or use the Draft button in Inbox.</p></div>`;
+        return;
+      }
+
+      const statusColor = { local: 'var(--muted)', gmail_draft: 'var(--accent2)', failed: 'var(--red)' };
+      const statusLabel = { local: '💾 Local', gmail_draft: '📨 Gmail Draft', failed: '❌ Failed' };
+
+      container.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>To</th><th>Subject</th><th>Status</th><th>Created</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            ${drafts.map(d => `
+              <tr id="draft-row-${d.id}">
+                <td style="color:var(--accent2)">${d.to_email || '—'}</td>
+                <td>${d.subject || '—'}</td>
+                <td>
+                  <span style="font-size:12px;color:${statusColor[d.status] || 'var(--muted)'}">${statusLabel[d.status] || d.status}</span>
+                  ${d.error_msg ? `<div style="font-size:10px;color:var(--red);margin-top:2px">${d.error_msg}</div>` : ''}
+                </td>
+                <td style="color:var(--muted);font-size:12px">${formatDate(d.created_at)}</td>
+                <td>
+                  <div class="actions">
+                    <button class="secondary" onclick="editDraft(${d.id})">Edit</button>
+                    ${d.status !== 'gmail_draft'
+                      ? `<button class="secondary" onclick="pushDraftToGmail(${d.id}, this)">📨 Gmail</button>`
+                      : ''}
+                    <button class="danger" onclick="deleteDraft(${d.id})">Delete</button>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load drafts.</p></div>`;
+    }
+  }
+
+  function openNewDraftModal() {
+    document.getElementById('draft-edit-id').value      = '';
+    document.getElementById('draft-edit-to').value      = '';
+    document.getElementById('draft-edit-subject').value = '';
+    document.getElementById('draft-edit-body').innerHTML = '';
+    document.getElementById('draft-edit-title').textContent = '✍ New Draft';
+    openModal('draft-edit-modal');
+  }
+
+  function editDraft(id) {
+    const d = _draftsCache.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('draft-edit-id').value       = id;
+    document.getElementById('draft-edit-to').value       = d.to_email || '';
+    document.getElementById('draft-edit-subject').value  = d.subject  || '';
+    document.getElementById('draft-edit-body').innerHTML = d.body     || '';
+    document.getElementById('draft-edit-title').textContent = '✍ Edit Draft';
+    openModal('draft-edit-modal');
+  }
+
+  function draftFmt(cmd, val) {
+    document.getElementById('draft-edit-body').focus();
+    document.execCommand(cmd, false, val || null);
+  }
+
+  async function saveDraft(mode) {
+    const id      = document.getElementById('draft-edit-id').value;
+    const to      = document.getElementById('draft-edit-to').value.trim();
+    const subject = document.getElementById('draft-edit-subject').value.trim();
+    const body    = document.getElementById('draft-edit-body').innerHTML.trim();
+
+    if (!to || !subject) { alert('To and Subject are required.'); return; }
+
+    const payload = { to_email: to, subject, body };
+
+    if (id) {
+      // Update existing
+      await fetch(`/api/drafts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (mode === 'gmail') await pushDraftToGmailById(parseInt(id));
+    } else {
+      // Create new
+      const r = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json();
+      if (mode === 'gmail' && d.id) await pushDraftToGmailById(d.id);
+    }
+
+    closeModal('draft-edit-modal');
+    await loadDrafts();
+  }
+
+  async function pushDraftToGmail(id, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    await pushDraftToGmailById(id);
+    await loadDrafts();
+  }
+
+  async function pushDraftToGmailById(id) {
+    const r = await fetch(`/api/drafts/${id}/push-gmail`, { method: 'POST' });
+    const d = await r.json();
+    if (!d.ok) alert(`Gmail push failed: ${d.error}`);
+  }
+
+  async function deleteDraft(id) {
+    if (!confirm('Delete this draft?')) return;
+    await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
+    document.getElementById(`draft-row-${id}`)?.remove();
+    await loadDrafts();
+  }
+
+  // ── Client picker for draft modal ─────────────────────────────────────────
+  async function openClientPicker() {
+    const r = await fetch('/api/clients');
+    const clients = await r.json();
+    const list = document.getElementById('client-picker-list');
+    if (!clients.length) {
+      list.innerHTML = `<div class="empty-state"><p>No clients yet.</p></div>`;
+    } else {
+      list.innerHTML = clients.map(c => `
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between"
+             onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''"
+             onclick="pickClient('${c.email}', '${(c.name || '').replace(/'/g,"\\'")}')">
+          <div>
+            <div style="font-size:13px;font-weight:500">${c.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${c.email || '—'}</div>
+          </div>
+          <span style="color:var(--accent2);font-size:12px">Select →</span>
+        </div>`).join('');
+    }
+    openModal('client-picker-modal');
+  }
+
+  function pickClient(email, name) {
+    document.getElementById('draft-edit-to').value = email;
+    const subj = document.getElementById('draft-edit-subject');
+    if (!subj.value) subj.value = `Re: Property Inquiry — ${name}`;
+    closeModal('client-picker-modal');
+  }
+
+  // ── Send All ──────────────────────────────────────────────────────────────
+  async function confirmSendAll() {
+    const r = await fetch('/api/drafts');
+    const drafts = await r.json();
+    const pending = drafts.filter(d => ['local','gmail_draft','failed'].includes(d.status));
+    document.getElementById('send-all-count').textContent =
+      `${pending.length} draft${pending.length !== 1 ? 's' : ''} will be sent.`;
+    openModal('send-all-modal');
+  }
+
+  async function executeSendAll() {
+    closeModal('send-all-modal');
+    const btn = document.getElementById('send-all-btn');
+    btn.disabled = true;
+    btn.textContent = '📤 Sending...';
+
+    try {
+      const r = await fetch('/api/drafts/send-all', { method: 'POST' });
+      const d = await r.json();
+      await loadDrafts();
+      if (d.failed > 0) {
+        alert(`Sent: ${d.sent} ✓\nFailed: ${d.failed} — failed drafts remain in the list.`);
+      } else {
+        alert(`All ${d.sent} draft${d.sent !== 1 ? 's' : ''} sent successfully ✓`);
+      }
+    } catch(e) {
+      alert('Send failed — check your Gmail connection.');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '📤 Send All Drafts';
   }
 
   // ── Delete client ─────────────────────────────────────────────────────────
@@ -1215,7 +1524,8 @@
   });
 
   refreshAll();
-  loadLeads(); // preload for dashboard recent leads
+  loadLeads();   // preload for dashboard recent leads
+  loadDrafts();  // preload drafts badge
   setPollDisplay();
   buildSwatches();
   setInterval(refreshAll, 30000);

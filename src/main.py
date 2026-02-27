@@ -184,6 +184,165 @@ async def save_profile(profile: AgentProfile):
     return {"ok": True}
 
 
+# ── Drafts ───────────────────────────────────────────────────────────────────
+
+class DraftIn(BaseModel):
+    to_email: str
+    subject:  str
+    body:     str
+
+
+@app.get("/api/drafts")
+async def get_drafts():
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM drafts WHERE status != 'sent' ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/drafts")
+async def create_draft_manual(draft: DraftIn):
+    """Create a new local draft manually (not from a lead)."""
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    cur = conn.execute("""
+        INSERT INTO drafts (to_email, subject, body, status, created_at, updated_at)
+        VALUES (?,?,?,?,?,?)
+    """, (draft.to_email, draft.subject, draft.body, "local", now, now))
+    draft_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": draft_id, "status": "local"}
+
+
+@app.patch("/api/drafts/{draft_id}")
+async def update_draft(draft_id: int, draft: DraftIn):
+    """Edit a draft locally and optionally sync to Gmail if it has a draft id."""
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Draft not found"}
+
+    row = dict(row)
+    conn.execute("""
+        UPDATE drafts SET to_email=?, subject=?, body=?, updated_at=? WHERE id=?
+    """, (draft.to_email, draft.subject, draft.body, now, draft_id))
+    conn.commit()
+    conn.close()
+
+    # If synced to Gmail drafts, update there too
+    if row.get("gmail_draft_id"):
+        creds = gm.get_credentials()
+        if creds:
+            try:
+                await asyncio.to_thread(
+                    gm.update_gmail_draft, creds,
+                    row["gmail_draft_id"], draft.to_email, draft.subject, draft.body
+                )
+            except Exception as e:
+                print(f"[drafts] Gmail sync failed: {e}")
+
+    return {"ok": True}
+
+
+@app.delete("/api/drafts/{draft_id}")
+async def delete_draft(draft_id: int):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Not found"}
+    row = dict(row)
+    conn.execute("DELETE FROM drafts WHERE id=?", (draft_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/drafts/{draft_id}/push-gmail")
+async def push_draft_to_gmail(draft_id: int):
+    """Push a local draft to Gmail Drafts."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "error": "Not found"}
+    row = dict(row)
+    creds = gm.get_credentials()
+    if not creds:
+        conn.close()
+        return {"ok": False, "error": "Gmail not connected"}
+    try:
+        gmail_id = await asyncio.to_thread(
+            gm.create_gmail_draft_public, creds,
+            row["to_email"], row["subject"], row["body"]
+        )
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        conn.execute(
+            "UPDATE drafts SET gmail_draft_id=?, status='gmail_draft', updated_at=? WHERE id=?",
+            (gmail_id, now, draft_id)
+        )
+        conn.commit()
+        conn.close()
+        return {"ok": True, "gmail_draft_id": gmail_id}
+    except Exception as e:
+        conn.close()
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/drafts/send-all")
+async def send_all_drafts():
+    """Send all pending drafts via Gmail. Returns per-draft results."""
+    conn  = get_conn()
+    rows  = conn.execute(
+        "SELECT * FROM drafts WHERE status IN ('local','gmail_draft','failed')"
+    ).fetchall()
+    conn.close()
+
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail not connected"}
+
+    results = []
+    for row in rows:
+        row = dict(row)
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        try:
+            if row.get("gmail_draft_id"):
+                await asyncio.to_thread(gm.send_gmail_draft, creds, row["gmail_draft_id"])
+            else:
+                await asyncio.to_thread(
+                    gm.send_gmail_message, creds,
+                    row["to_email"], row["subject"], row["body"]
+                )
+            conn2 = get_conn()
+            conn2.execute(
+                "UPDATE drafts SET status='sent', error_msg=NULL, updated_at=? WHERE id=?",
+                (now, row["id"])
+            )
+            conn2.commit()
+            conn2.close()
+            results.append({"id": row["id"], "to": row["to_email"], "ok": True})
+        except Exception as e:
+            err = str(e)
+            conn2 = get_conn()
+            conn2.execute(
+                "UPDATE drafts SET status='failed', error_msg=?, updated_at=? WHERE id=?",
+                (err, now, row["id"])
+            )
+            conn2.commit()
+            conn2.close()
+            results.append({"id": row["id"], "to": row["to_email"], "ok": False, "error": err})
+
+    sent  = sum(1 for r in results if r["ok"])
+    failed = sum(1 for r in results if not r["ok"])
+    return {"ok": True, "sent": sent, "failed": failed, "results": results}
+
+
 # ── Gmail account info ────────────────────────────────────────────────────────
 
 @app.get("/api/gmail-account")

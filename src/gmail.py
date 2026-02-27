@@ -189,3 +189,61 @@ def _extract_body(payload: dict) -> str:
                 return text
 
     return ""
+
+
+def send_gmail_message(creds, to: str, subject: str, body: str,
+                       thread_id=None) -> str:
+    """Send an email immediately. Returns sent message id."""
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    msg = email.mime.text.MIMEText(body)
+    msg["to"] = to
+    msg["subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    body_dict: dict = {"raw": raw}
+    if thread_id:
+        body_dict["threadId"] = thread_id
+    result = service.users().messages().send(userId="me", body=body_dict).execute()
+    return result["id"]
+
+
+def update_gmail_draft(creds, draft_id: str, to: str, subject: str, body: str) -> str:
+    """Update an existing Gmail draft. Returns draft id."""
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    msg = email.mime.text.MIMEText(body)
+    msg["to"] = to
+    msg["subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    result = service.users().drafts().update(
+        userId="me", id=draft_id,
+        body={"message": {"raw": raw}}
+    ).execute()
+    return result["id"]
+
+
+def send_gmail_draft(creds, draft_id: str) -> str:
+    """Send an existing Gmail draft by id. Returns sent message id."""
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    result = service.users().drafts().send(
+        userId="me", body={"id": draft_id}
+    ).execute()
+    return result["id"]
+
+
+def create_gmail_draft_public(creds, to: str, subject: str, body: str,
+                               thread_id=None) -> str:
+    """Public wrapper to create a Gmail draft. Returns draft id."""
+    return _create_gmail_draft_impl(creds, to, subject, body, thread_id)
+
+
+def _create_gmail_draft_impl(creds, to: str, subject: str, body: str,
+                              thread_id=None) -> str:
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    msg = email.mime.text.MIMEText(body)
+    msg["to"] = to
+    msg["subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    draft_body: dict = {"message": {"raw": raw}}
+    if thread_id:
+        draft_body["message"]["threadId"] = thread_id
+    draft = service.users().drafts().create(userId="me", body=draft_body).execute()
+    return draft["id"]

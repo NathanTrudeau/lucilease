@@ -85,15 +85,31 @@ def init_db():
     # Draft log — track what's been drafted
     cur.execute("""
         CREATE TABLE IF NOT EXISTS drafts (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            lead_id     INTEGER REFERENCES leads(id),
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id        INTEGER REFERENCES leads(id),
+            to_email       TEXT,
             gmail_draft_id TEXT,
-            subject     TEXT,
-            body        TEXT,
-            created_at  TEXT    NOT NULL,
-            sent        INTEGER NOT NULL DEFAULT 0
+            subject        TEXT,
+            body           TEXT,
+            status         TEXT NOT NULL DEFAULT 'local',
+            error_msg      TEXT,
+            created_at     TEXT NOT NULL,
+            updated_at     TEXT
         )
     """)
+
+    # Migrate older draft tables that may be missing new columns
+    existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(drafts)").fetchall()}
+    migrations = {
+        "to_email":  "ALTER TABLE drafts ADD COLUMN to_email TEXT",
+        "status":    "ALTER TABLE drafts ADD COLUMN status TEXT NOT NULL DEFAULT 'local'",
+        "error_msg": "ALTER TABLE drafts ADD COLUMN error_msg TEXT",
+        "updated_at":"ALTER TABLE drafts ADD COLUMN updated_at TEXT",
+    }
+    for col, sql in migrations.items():
+        if col not in existing_cols:
+            cur.execute(sql)
+            print(f"[db] Migrated: added column {col} to drafts.")
 
     conn.commit()
     conn.close()
