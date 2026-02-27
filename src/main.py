@@ -9,20 +9,21 @@ import pathlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Optional
 
 from db import init_db, get_conn
 import gmail as gm
 
-STATIC      = pathlib.Path(__file__).parent / "static"
-POLL_SECS   = int(os.getenv("POLL_SECONDS", "300"))
+STATIC    = pathlib.Path(__file__).parent / "static"
+POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
 
 
 # ── Background polling ────────────────────────────────────────────────────────
 
 async def _poll_loop():
-    """Poll Gmail every POLL_SECS seconds."""
     while True:
         await asyncio.sleep(POLL_SECS)
         try:
@@ -42,9 +43,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-# ── App ───────────────────────────────────────────────────────────────────────
-
-app = FastAPI(title="Lucilease", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -54,6 +53,7 @@ async def health():
     return {
         "status":        "ok",
         "authenticated": gm.is_authenticated(),
+        "poll_seconds":  POLL_SECS,
         "timestamp":     datetime.datetime.utcnow().isoformat() + "Z",
     }
 
@@ -62,16 +62,12 @@ async def health():
 
 @app.get("/auth/gmail")
 async def auth_gmail():
-    """Redirect user to Google OAuth consent screen."""
-    url = gm.get_auth_url()
-    return RedirectResponse(url)
+    return RedirectResponse(gm.get_auth_url())
 
 
 @app.get("/auth/callback")
-async def auth_callback(code: str, request: Request):
-    """Handle Google OAuth2 callback and save token."""
+async def auth_callback(code: str):
     await asyncio.to_thread(gm.exchange_code, code)
-    # Run first poll immediately after auth
     asyncio.create_task(asyncio.to_thread(gm.poll_inbox))
     return RedirectResponse("/?connected=1")
 
@@ -114,7 +110,6 @@ async def get_leads(status: str = "new"):
 
 @app.post("/api/leads/{lead_id}/handle")
 async def handle_lead(lead_id: int):
-    """Mark a lead as handled."""
     conn = get_conn()
     conn.execute(
         "UPDATE leads SET status='handled', handled_at=? WHERE id=?",
@@ -127,9 +122,8 @@ async def handle_lead(lead_id: int):
 
 @app.post("/api/leads/{lead_id}/add-client")
 async def add_client_from_lead(lead_id: int):
-    """Promote a lead to the client list."""
-    conn  = get_conn()
-    lead  = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    conn = get_conn()
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
     if not lead:
         conn.close()
         return {"ok": False, "error": "Lead not found"}
@@ -142,16 +136,47 @@ async def add_client_from_lead(lead_id: int):
               lead["phone"], "active", now, now))
         conn.commit()
     except Exception:
-        pass  # already exists (unique email constraint)
+        pass
     conn.close()
     return {"ok": True}
 
 
+@app.post("/api/leads/{lead_id}/draft")
+async def create_draft(lead_id: int):
+    """Generate a Claude reply draft for a lead and push it to Gmail."""
+    try:
+        from ai import draft_reply
+        result = await asyncio.to_thread(draft_reply, lead_id)
+        return {"ok": True, **result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/poll")
 async def manual_poll():
-    """Trigger a manual Gmail poll."""
     found = await asyncio.to_thread(gm.poll_inbox)
     return {"new_leads": found}
+
+
+# ── Agent profile ─────────────────────────────────────────────────────────────
+
+class AgentProfile(BaseModel):
+    agent_name:    str
+    agent_company: Optional[str] = ""
+    agent_tone:    Optional[str] = "professional and warm"
+
+
+@app.get("/api/profile")
+async def get_profile():
+    from ai import get_agent_profile
+    return get_agent_profile()
+
+
+@app.post("/api/profile")
+async def save_profile(profile: AgentProfile):
+    from ai import save_agent_profile
+    save_agent_profile(profile.model_dump())
+    return {"ok": True}
 
 
 # ── Clients ───────────────────────────────────────────────────────────────────
@@ -174,6 +199,31 @@ async def get_properties():
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+class PropertyIn(BaseModel):
+    address:       str
+    type:          str = "rental"
+    bedrooms:      Optional[int] = None
+    bathrooms:     Optional[float] = None
+    price_monthly: Optional[int] = None
+    price_sale:    Optional[int] = None
+    notes:         Optional[str] = None
+
+
+@app.post("/api/properties")
+async def add_property(prop: PropertyIn):
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO properties
+            (address, type, bedrooms, bathrooms, price_monthly, price_sale, status, notes, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, (prop.address, prop.type, prop.bedrooms, prop.bathrooms,
+          prop.price_monthly, prop.price_sale, "active", prop.notes, now, now))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 # ── Static + SPA ──────────────────────────────────────────────────────────────

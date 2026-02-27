@@ -257,6 +257,58 @@
     /* ── Page visibility ── */
     .page { display: none; flex-direction: column; height: 100%; overflow: hidden; }
     .page.active { display: flex; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      width: 480px;
+      max-width: 95vw;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 9px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text); font-size: 13px;
+      outline: none; transition: border-color 0.15s;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      border-color: var(--accent);
+    }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── Draft preview ── */
+    .draft-preview {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      max-height: 300px;
+      overflow-y: auto;
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -295,6 +347,90 @@
     <span id="status-text">Checking...</span>
   </div>
 </aside>
+
+<!-- ── Draft Modal ── -->
+<div class="modal-overlay" id="draft-modal">
+  <div class="modal" style="width:560px">
+    <h3>✍ Draft Reply</h3>
+    <div id="draft-modal-content">
+      <p style="color:var(--muted);text-align:center;padding:20px">Generating with Claude...</p>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('draft-modal')">Close</button>
+      <a id="draft-gmail-link" class="btn" href="#" target="_blank" style="display:none">Open in Gmail →</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Property Modal ── -->
+<div class="modal-overlay" id="property-modal">
+  <div class="modal">
+    <h3>🏢 Add Property</h3>
+    <div class="form-group">
+      <label>Address</label>
+      <input id="prop-address" type="text" placeholder="123 Main St, Santa Barbara, CA" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Type</label>
+        <select id="prop-type">
+          <option value="rental">Rental</option>
+          <option value="sale">For Sale</option>
+        </select>
+      </div>
+      <div class="form-group" id="prop-price-group">
+        <label>Monthly Rent ($)</label>
+        <input id="prop-price-monthly" type="number" placeholder="3500" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Bedrooms</label>
+        <input id="prop-bedrooms" type="number" placeholder="2" />
+      </div>
+      <div class="form-group">
+        <label>Bathrooms</label>
+        <input id="prop-bathrooms" type="number" step="0.5" placeholder="1.5" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="prop-notes" placeholder="Pet-friendly, parking included, near downtown..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('property-modal')">Cancel</button>
+      <button onclick="submitProperty()">Add Property</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Agent Profile Modal ── -->
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal">
+    <h3>👤 Agent Profile</h3>
+    <div class="form-group">
+      <label>Your Name</label>
+      <input id="profile-name" type="text" placeholder="Jane Smith" />
+    </div>
+    <div class="form-group">
+      <label>Company</label>
+      <input id="profile-company" type="text" placeholder="Santa Barbara Realty" />
+    </div>
+    <div class="form-group">
+      <label>Reply Tone</label>
+      <select id="profile-tone">
+        <option value="professional and warm">Professional &amp; Warm</option>
+        <option value="friendly and conversational">Friendly &amp; Conversational</option>
+        <option value="concise and direct">Concise &amp; Direct</option>
+        <option value="formal and corporate">Formal &amp; Corporate</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('profile-modal')">Cancel</button>
+      <button onclick="saveProfile()">Save Profile</button>
+    </div>
+  </div>
+</div>
 
 <!-- Main -->
 <main>
@@ -394,7 +530,7 @@
   <div id="page-properties" class="page">
     <header>
       <div><h2>Properties</h2><p>Your active listings</p></div>
-      <div class="header-actions"><button>+ Add Property</button></div>
+      <div class="header-actions"><button onclick="openModal('property-modal')">+ Add Property</button></div>
     </header>
     <div class="content">
       <div class="panel">
@@ -448,7 +584,7 @@
             <div class="setting-label">Agent Profile</div>
             <div class="setting-desc">Your name, company, and reply tone for AI-drafted emails</div>
           </div>
-          <button class="secondary" disabled>Phase 2</button>
+          <button onclick="openProfileModal()">Edit Profile</button>
         </div>
         <div class="setting-row">
           <div>
@@ -561,7 +697,7 @@
                 <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
                 <td>
                   <div class="actions">
-                    <button class="secondary" disabled title="Coming in Phase 2">✍ Draft</button>
+                    <button onclick="generateDraft(${l.id}, this)">✍ Draft</button>
                     <button class="success" onclick="addClient(${l.id})">+ Client</button>
                     <button class="danger" onclick="handleLead(${l.id})">✓ Done</button>
                   </div>
@@ -706,6 +842,123 @@
     const mins = Math.round(secs / 60);
     document.getElementById('poll-interval-display').textContent =
       mins >= 1 ? `Every ${mins} minute${mins > 1 ? 's' : ''}` : `Every ${secs}s`;
+  }
+
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // Close on backdrop click
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+  });
+
+  // ── Draft reply ───────────────────────────────────────────────────────────
+  async function generateDraft(leadId, btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Drafting...';
+
+    document.getElementById('draft-modal-content').innerHTML =
+      '<p style="color:var(--muted);text-align:center;padding:20px">Generating with Claude Sonnet...</p>';
+    document.getElementById('draft-gmail-link').style.display = 'none';
+    openModal('draft-modal');
+
+    try {
+      const r = await fetch(`/api/leads/${leadId}/draft`, { method: 'POST' });
+      const d = await r.json();
+
+      if (!d.ok) throw new Error(d.error || 'Draft failed');
+
+      document.getElementById('draft-modal-content').innerHTML = `
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Subject</div>
+          <div style="font-size:13px;font-weight:500">${d.subject}</div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Reply</div>
+        <div class="draft-preview">${d.body}</div>
+        ${d.gmail_draft_id
+          ? '<p style="margin-top:12px;font-size:12px;color:var(--green)">✓ Saved to Gmail Drafts</p>'
+          : '<p style="margin-top:12px;font-size:12px;color:var(--muted)">Draft saved locally (Gmail draft unavailable)</p>'
+        }`;
+
+      if (d.gmail_draft_id) {
+        const gmailLink = document.getElementById('draft-gmail-link');
+        gmailLink.href = 'https://mail.google.com/mail/#drafts';
+        gmailLink.style.display = 'inline-flex';
+      }
+
+      btn.textContent = '✓ Drafted';
+    } catch(e) {
+      document.getElementById('draft-modal-content').innerHTML =
+        `<p style="color:var(--red);text-align:center;padding:20px">Error: ${e.message}</p>`;
+      btn.disabled = false;
+      btn.textContent = '✍ Draft';
+    }
+  }
+
+  // ── Add Property ──────────────────────────────────────────────────────────
+  document.getElementById('prop-type').addEventListener('change', function() {
+    const label = this.value === 'rental' ? 'Monthly Rent ($)' : 'Sale Price ($)';
+    document.querySelector('#prop-price-group label').textContent = label;
+    document.getElementById('prop-price-monthly').placeholder =
+      this.value === 'rental' ? '3500' : '650000';
+  });
+
+  async function submitProperty() {
+    const type = document.getElementById('prop-type').value;
+    const price = parseInt(document.getElementById('prop-price-monthly').value) || null;
+
+    const body = {
+      address:       document.getElementById('prop-address').value.trim(),
+      type,
+      bedrooms:      parseInt(document.getElementById('prop-bedrooms').value) || null,
+      bathrooms:     parseFloat(document.getElementById('prop-bathrooms').value) || null,
+      price_monthly: type === 'rental' ? price : null,
+      price_sale:    type === 'sale'   ? price : null,
+      notes:         document.getElementById('prop-notes').value.trim() || null,
+    };
+
+    if (!body.address) { alert('Address is required.'); return; }
+
+    const r = await fetch('/api/properties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      closeModal('property-modal');
+      await loadProperties();
+      await refreshStats();
+      // Clear form
+      ['prop-address','prop-price-monthly','prop-bedrooms','prop-bathrooms','prop-notes']
+        .forEach(id => document.getElementById(id).value = '');
+    }
+  }
+
+  // ── Agent Profile ─────────────────────────────────────────────────────────
+  async function openProfileModal() {
+    const r = await fetch('/api/profile');
+    const p = await r.json();
+    document.getElementById('profile-name').value    = p.agent_name    || '';
+    document.getElementById('profile-company').value = p.agent_company || '';
+    document.getElementById('profile-tone').value    = p.agent_tone    || 'professional and warm';
+    openModal('profile-modal');
+  }
+
+  async function saveProfile() {
+    const body = {
+      agent_name:    document.getElementById('profile-name').value.trim(),
+      agent_company: document.getElementById('profile-company').value.trim(),
+      agent_tone:    document.getElementById('profile-tone').value,
+    };
+    if (!body.agent_name) { alert('Name is required.'); return; }
+    await fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    closeModal('profile-modal');
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
