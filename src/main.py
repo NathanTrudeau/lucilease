@@ -48,7 +48,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 @app.get("/health")
 async def health():
