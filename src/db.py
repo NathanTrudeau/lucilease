@@ -99,17 +99,21 @@ def init_db():
     """)
 
     # Migrate older draft tables that may be missing new columns
-    existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(drafts)").fetchall()}
+    pragma_rows   = cur.execute("PRAGMA table_info(drafts)").fetchall()
+    existing_cols = {row["name"] for row in pragma_rows}  # use named access
     migrations = {
         "to_email":  "ALTER TABLE drafts ADD COLUMN to_email TEXT",
-        "status":    "ALTER TABLE drafts ADD COLUMN status TEXT NOT NULL DEFAULT 'local'",
+        "status":    "ALTER TABLE drafts ADD COLUMN status TEXT",
         "error_msg": "ALTER TABLE drafts ADD COLUMN error_msg TEXT",
         "updated_at":"ALTER TABLE drafts ADD COLUMN updated_at TEXT",
     }
     for col, sql in migrations.items():
         if col not in existing_cols:
-            cur.execute(sql)
-            print(f"[db] Migrated: added column {col} to drafts.")
+            try:
+                cur.execute(sql)
+                print(f"[db] Migrated: added column '{col}' to drafts.")
+            except Exception as e:
+                print(f"[db] Migration warning ({col}): {e}")
 
     conn.commit()
     conn.close()

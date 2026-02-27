@@ -202,11 +202,16 @@ class DraftIn(BaseModel):
 @app.get("/api/drafts")
 async def get_drafts():
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM drafts WHERE status != 'sent' ORDER BY created_at DESC"
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        rows = conn.execute(
+            "SELECT * FROM drafts WHERE status IS NULL OR status != 'sent' ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[drafts] GET error: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 @app.post("/api/drafts")
