@@ -231,7 +231,7 @@ async def update_draft(draft_id: int, draft: DraftIn):
     # Auto-promote duplicate → local if subject AND body are now unique
     new_status = row["status"]
     if row["status"] == "duplicate":
-        new_status = _check_duplicate_status(conn, draft_id, draft.subject, draft.body)
+        new_status = _check_duplicate_status(conn, draft_id, draft.to_email, draft.body)
 
     conn.execute("""
         UPDATE drafts SET to_email=?, subject=?, body=?, status=?, updated_at=? WHERE id=?
@@ -290,21 +290,21 @@ async def duplicate_draft(draft_id: int):
     return {"ok": True, "id": new_id}
 
 
-def _check_duplicate_status(conn, draft_id: int, subject: str, body: str) -> str:
+def _check_duplicate_status(conn, draft_id: int, to_email: str, body: str) -> str:
     """
-    Return 'local' if subject AND body are both unique among all other drafts.
-    Return 'duplicate' otherwise.
+    Return 'local' if body AND to_email are both unique among all other drafts.
+    Subject may repeat — that's fine (e.g. 'Re: Property Inquiry' for many clients).
     """
     others = conn.execute(
-        "SELECT subject, body FROM drafts WHERE id != ? AND status != 'sent'",
+        "SELECT to_email, body FROM drafts WHERE id != ? AND status != 'sent'",
         (draft_id,)
     ).fetchall()
-    subj_clean = (subject or "").strip().lower()
-    body_clean = (body or "").strip().lower()
+    email_clean = (to_email or "").strip().lower()
+    body_clean  = (body or "").strip().lower()
     for other in others:
-        other_subj = (other["subject"] or "").strip().lower()
-        other_body = (other["body"] or "").strip().lower()
-        if subj_clean == other_subj or body_clean == other_body:
+        other_email = (other["to_email"] or "").strip().lower()
+        other_body  = (other["body"] or "").strip().lower()
+        if email_clean == other_email and body_clean == other_body:
             return "duplicate"
     return "local"
 
@@ -422,6 +422,48 @@ async def get_clients():
     rows = conn.execute("SELECT * FROM clients ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+class ClientIn(BaseModel):
+    name:    str
+    email:   Optional[str] = None
+    phone:   Optional[str] = None
+    address: Optional[str] = None
+    notes:   Optional[str] = None
+    status:  Optional[str] = "active"
+
+
+@app.post("/api/clients")
+async def create_client(client: ClientIn):
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    try:
+        cur = conn.execute("""
+            INSERT INTO clients (name, email, phone, address, notes, status, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (client.name, client.email, client.phone, client.address,
+              client.notes, client.status, now, now))
+        conn.commit()
+        new_id = cur.lastrowid
+    except Exception as e:
+        conn.close()
+        return {"ok": False, "error": str(e)}
+    conn.close()
+    return {"ok": True, "id": new_id}
+
+
+@app.patch("/api/clients/{client_id}")
+async def update_client(client_id: int, client: ClientIn):
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute("""
+        UPDATE clients SET name=?, email=?, phone=?, address=?, notes=?, status=?, updated_at=?
+        WHERE id=?
+    """, (client.name, client.email, client.phone, client.address,
+          client.notes, client.status, now, client_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 @app.delete("/api/clients/{client_id}")

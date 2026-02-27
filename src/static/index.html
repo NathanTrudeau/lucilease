@@ -553,6 +553,50 @@
   </div>
 </div>
 
+<!-- ── Edit Client Modal ── -->
+<div class="modal-overlay" id="client-edit-modal">
+  <div class="modal" style="width:480px">
+    <h3 id="client-edit-title">👤 Edit Client</h3>
+    <input type="hidden" id="client-edit-id" value="" />
+    <div class="form-row">
+      <div class="form-group">
+        <label>Name</label>
+        <input id="client-edit-name" type="text" placeholder="Jane Smith" />
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="client-edit-status">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Email</label>
+        <input id="client-edit-email" type="email" placeholder="jane@email.com" />
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input id="client-edit-phone" type="text" placeholder="(805) 555-0100" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Address</label>
+      <input id="client-edit-address" type="text" placeholder="123 Main St, Santa Barbara, CA" />
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="client-edit-notes" placeholder="Anything to remember about this client..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('client-edit-modal')">Cancel</button>
+      <button onclick="saveClient()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Theme Picker Modal ── -->
 <div class="modal-overlay" id="theme-modal">
   <div class="modal" style="width:360px">
@@ -758,7 +802,7 @@
   <div id="page-clients" class="page">
     <header>
       <div><h2>Clients</h2><p>Your contact list</p></div>
-      <div class="header-actions"><button>+ Add Client</button></div>
+      <div class="header-actions"><button onclick="openEditClient({})">+ Add Client</button></div>
     </header>
     <div class="content">
       <div class="panel">
@@ -1072,8 +1116,8 @@
     const r = await fetch(`/api/leads/${id}/add-client`, { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
-      alert('Client added!');
-      refreshStats();
+      await loadLeads();   // refreshes button state → shows "✓ In DB"
+      await refreshStats();
     }
   }
 
@@ -1114,7 +1158,12 @@
                 <td>${c.phone || '—'}</td>
                 <td><span class="tag active">${c.status}</span></td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(c.created_at)}</td>
-                <td><button class="danger" onclick="deleteClient(${c.id}, '${c.name.replace(/'/g,"\\'")}')">Remove</button></td>
+                <td>
+                  <div class="actions">
+                    <button class="secondary" onclick='openEditClient(${JSON.stringify(c)})'>Edit</button>
+                    <button class="danger" onclick="deleteClient(${c.id}, '${c.name.replace(/'/g,"\\'")}')">Remove</button>
+                  </div>
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>`;
@@ -1467,6 +1516,45 @@
 
     btn.disabled = false;
     btn.textContent = '📤 Send All Drafts';
+  }
+
+  // ── Edit / Add Client ─────────────────────────────────────────────────────
+  function openEditClient(c) {
+    document.getElementById('client-edit-id').value      = c.id || '';
+    document.getElementById('client-edit-name').value    = c.name    || '';
+    document.getElementById('client-edit-email').value   = c.email   || '';
+    document.getElementById('client-edit-phone').value   = c.phone   || '';
+    document.getElementById('client-edit-address').value = c.address || '';
+    document.getElementById('client-edit-notes').value   = c.notes   || '';
+    document.getElementById('client-edit-status').value  = c.status  || 'active';
+    document.getElementById('client-edit-title').textContent = c.id ? '👤 Edit Client' : '👤 Add Client';
+    openModal('client-edit-modal');
+  }
+
+  async function saveClient() {
+    const id = document.getElementById('client-edit-id').value;
+    const body = {
+      name:    document.getElementById('client-edit-name').value.trim(),
+      email:   document.getElementById('client-edit-email').value.trim() || null,
+      phone:   document.getElementById('client-edit-phone').value.trim() || null,
+      address: document.getElementById('client-edit-address').value.trim() || null,
+      notes:   document.getElementById('client-edit-notes').value.trim() || null,
+      status:  document.getElementById('client-edit-status').value,
+    };
+    if (!body.name) { alert('Name is required.'); return; }
+
+    const url    = id ? `/api/clients/${id}` : '/api/clients';
+    const method = id ? 'PATCH' : 'POST';
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('Save failed: ' + (d.error || 'unknown error')); return; }
+    closeModal('client-edit-modal');
+    await loadClients();
+    await refreshStats();
   }
 
   // ── Delete client ─────────────────────────────────────────────────────────
