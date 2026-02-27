@@ -41,28 +41,11 @@
       flex-shrink: 0;
     }
 
-    .logo {
-      padding: 24px 20px 20px;
-      border-bottom: 1px solid var(--border);
-    }
+    .logo { padding: 24px 20px 20px; border-bottom: 1px solid var(--border); }
+    .logo h1 { font-size: 20px; font-weight: 700; color: var(--accent2); letter-spacing: -0.5px; }
+    .logo p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-    .logo h1 {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--accent2);
-      letter-spacing: -0.5px;
-    }
-
-    .logo p {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 2px;
-    }
-
-    nav {
-      padding: 12px 8px;
-      flex: 1;
-    }
+    nav { padding: 12px 8px; flex: 1; }
 
     nav a {
       display: flex;
@@ -81,7 +64,6 @@
 
     nav a:hover { background: var(--border); color: var(--text); }
     nav a.active { background: rgba(108, 99, 255, 0.15); color: var(--accent2); }
-
     nav a .icon { font-size: 16px; width: 20px; text-align: center; }
 
     .badge {
@@ -95,6 +77,7 @@
       min-width: 18px;
       text-align: center;
     }
+    .badge.zero { background: var(--border); color: var(--muted); }
 
     .sidebar-footer {
       padding: 16px;
@@ -111,19 +94,12 @@
       margin-right: 6px;
       animation: pulse 2s infinite;
     }
+    .status-dot.offline { background: var(--red); animation: none; }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
     /* ── Main ── */
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
     header {
       padding: 18px 28px;
@@ -132,14 +108,15 @@
       align-items: center;
       justify-content: space-between;
       background: var(--surface);
+      flex-shrink: 0;
     }
 
     header h2 { font-size: 16px; font-weight: 600; }
     header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
 
-    .header-actions { display: flex; gap: 10px; }
-
-    button {
+    /* ── Buttons ── */
+    button, .btn {
       background: var(--accent);
       color: #fff;
       border: none;
@@ -149,18 +126,21 @@
       font-weight: 500;
       cursor: pointer;
       transition: opacity 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
     }
+    button:hover, .btn:hover { opacity: 0.85; }
+    button.secondary, .btn.secondary { background: var(--border); color: var(--text); }
+    button.danger { background: rgba(239,68,68,0.15); color: var(--red); }
+    button.success { background: rgba(34,197,94,0.15); color: var(--green); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    button:hover { opacity: 0.85; }
-    button.secondary { background: var(--border); color: var(--text); }
+    /* ── Content ── */
+    .content { flex: 1; overflow-y: auto; padding: 28px; }
 
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 28px;
-    }
-
-    /* ── Stats row ── */
+    /* ── Stats ── */
     .stats {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -174,10 +154,24 @@
       border-radius: 10px;
       padding: 18px 20px;
     }
-
     .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
     .stat-card .sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Alert banner ── */
+    .banner {
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .banner.warn  { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--yellow); }
+    .banner.info  { background: rgba(108,99,255,0.1); border: 1px solid rgba(108,99,255,0.3); color: var(--accent2); }
+    .banner.good  { background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.3);  color: var(--green); }
+    .banner a { color: inherit; font-weight: 600; }
 
     /* ── Panel ── */
     .panel {
@@ -185,6 +179,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
+      margin-bottom: 20px;
     }
 
     .panel-header {
@@ -196,8 +191,6 @@
       font-size: 13px;
       font-weight: 600;
     }
-
-    .panel-body { padding: 0; }
 
     /* ── Table ── */
     table { width: 100%; border-collapse: collapse; }
@@ -229,12 +222,15 @@
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
-    .tag.new      { background: rgba(108,99,255,0.2); color: var(--accent2); }
-    .tag.handled  { background: rgba(34,197,94,0.15); color: var(--green); }
-    .tag.rental   { background: rgba(245,158,11,0.15); color: var(--yellow); }
-    .tag.sale     { background: rgba(239,68,68,0.15); color: var(--red); }
-    .tag.active   { background: rgba(34,197,94,0.15); color: var(--green); }
+    .tag.new     { background: rgba(108,99,255,0.2); color: var(--accent2); }
+    .tag.handled { background: rgba(34,197,94,0.15); color: var(--green); }
+    .tag.active  { background: rgba(34,197,94,0.15); color: var(--green); }
+    .tag.rental  { background: rgba(245,158,11,0.15); color: var(--yellow); }
+    .tag.sale    { background: rgba(239,68,68,0.15); color: var(--red); }
 
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Empty state ── */
     .empty-state {
       text-align: center;
       padding: 48px 20px;
@@ -243,9 +239,24 @@
     .empty-state .icon { font-size: 36px; margin-bottom: 12px; }
     .empty-state p { font-size: 13px; }
 
-    /* ── Page sections (hidden unless active) ── */
-    .page { display: none; }
-    .page.active { display: block; }
+    /* ── Settings form ── */
+    .settings-section { margin-bottom: 28px; }
+    .settings-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 13px; font-weight: 500; }
+    .setting-desc  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Page visibility ── */
+    .page { display: none; flex-direction: column; height: 100%; overflow: hidden; }
+    .page.active { display: flex; }
   </style>
 </head>
 <body>
@@ -263,7 +274,7 @@
     </a>
     <a onclick="showPage('inbox', this)">
       <span class="icon">📬</span> Inbox
-      <span class="badge" id="inbox-badge">0</span>
+      <span class="badge zero" id="inbox-badge">0</span>
     </a>
     <a onclick="showPage('clients', this)">
       <span class="icon">👥</span> Clients
@@ -280,14 +291,15 @@
   </nav>
 
   <div class="sidebar-footer">
-    <span class="status-dot"></span> System running
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Checking...</span>
   </div>
 </aside>
 
 <!-- Main -->
 <main>
 
-  <!-- Dashboard -->
+  <!-- ── Dashboard ── -->
   <div id="page-dashboard" class="page active">
     <header>
       <div>
@@ -295,10 +307,13 @@
         <p id="header-date">—</p>
       </div>
       <div class="header-actions">
-        <button class="secondary" onclick="refreshStats()">↻ Refresh</button>
+        <button class="secondary" onclick="refreshAll()">↻ Refresh</button>
       </div>
     </header>
     <div class="content">
+
+      <div id="gmail-banner"></div>
+
       <div class="stats">
         <div class="stat-card">
           <div class="label">New Leads</div>
@@ -325,19 +340,17 @@
       <div class="panel">
         <div class="panel-header">
           Recent Leads
-          <button onclick="showPage('inbox', document.querySelector('nav a:nth-child(2)'))">View all</button>
+          <button class="secondary" onclick="showPage('inbox', document.querySelector('nav a:nth-child(2)'))">View all →</button>
         </div>
-        <div class="panel-body" id="recent-leads-table">
-          <div class="empty-state">
-            <div class="icon">📭</div>
-            <p>No leads yet. Gmail integration coming in Phase 1.</p>
-          </div>
+        <div id="recent-leads-container">
+          <div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>
         </div>
       </div>
+
     </div>
   </div>
 
-  <!-- Inbox -->
+  <!-- ── Inbox ── -->
   <div id="page-inbox" class="page">
     <header>
       <div>
@@ -345,144 +358,365 @@
         <p>Incoming lead emails</p>
       </div>
       <div class="header-actions">
-        <button class="secondary">↻ Check now</button>
-        <button>✍ Draft all replies</button>
+        <button class="secondary" onclick="manualPoll()" id="poll-btn">↻ Check now</button>
       </div>
     </header>
     <div class="content">
       <div class="panel">
-        <div class="panel-header">New Leads</div>
-        <div class="panel-body" id="leads-table-body">
-          <div class="empty-state">
-            <div class="icon">📬</div>
-            <p>Gmail not connected yet. Configure it in Settings.</p>
-          </div>
+        <div class="panel-header">
+          New Leads
+          <span id="leads-count" style="color:var(--muted);font-weight:400;font-size:12px;"></span>
+        </div>
+        <div id="leads-container">
+          <div class="empty-state"><div class="icon">📬</div><p>Loading...</p></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Clients -->
+  <!-- ── Clients ── -->
   <div id="page-clients" class="page">
     <header>
-      <div>
-        <h2>Clients</h2>
-        <p>Your contact list</p>
-      </div>
-      <div class="header-actions">
-        <button>+ Add Client</button>
-      </div>
+      <div><h2>Clients</h2><p>Your contact list</p></div>
+      <div class="header-actions"><button>+ Add Client</button></div>
     </header>
     <div class="content">
       <div class="panel">
         <div class="panel-header">All Clients</div>
-        <div class="panel-body" id="clients-table-body">
-          <div class="empty-state">
-            <div class="icon">👥</div>
-            <p>No clients yet. They'll appear here as leads come in.</p>
-          </div>
+        <div id="clients-container">
+          <div class="empty-state"><div class="icon">👥</div><p>No clients yet.</p></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Properties -->
+  <!-- ── Properties ── -->
   <div id="page-properties" class="page">
     <header>
-      <div>
-        <h2>Properties</h2>
-        <p>Your active listings</p>
-      </div>
-      <div class="header-actions">
-        <button>+ Add Property</button>
-      </div>
+      <div><h2>Properties</h2><p>Your active listings</p></div>
+      <div class="header-actions"><button>+ Add Property</button></div>
     </header>
     <div class="content">
       <div class="panel">
         <div class="panel-header">Active Listings</div>
-        <div class="panel-body" id="properties-table-body">
-          <div class="empty-state">
-            <div class="icon">🏢</div>
-            <p>No properties yet. Add your listings to get started.</p>
-          </div>
+        <div id="properties-container">
+          <div class="empty-state"><div class="icon">🏢</div><p>No properties yet.</p></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Calendar -->
+  <!-- ── Calendar ── -->
   <div id="page-calendar" class="page">
-    <header>
-      <div>
-        <h2>Calendar</h2>
-        <p>Upcoming appointments</p>
-      </div>
-    </header>
+    <header><div><h2>Calendar</h2><p>Upcoming appointments</p></div></header>
     <div class="content">
       <div class="panel">
-        <div class="panel-body">
-          <div class="empty-state">
-            <div class="icon">📅</div>
-            <p>Google Calendar integration coming in Phase 4.</p>
-          </div>
-        </div>
+        <div class="empty-state"><div class="icon">📅</div><p>Google Calendar integration — coming in Phase 4.</p></div>
       </div>
     </div>
   </div>
 
-  <!-- Settings -->
+  <!-- ── Settings ── -->
   <div id="page-settings" class="page">
-    <header>
-      <div>
-        <h2>Settings</h2>
-        <p>Configure your Lucilease agent</p>
-      </div>
-    </header>
+    <header><div><h2>Settings</h2><p>Configure your Lucilease agent</p></div></header>
     <div class="content">
-      <div class="panel">
-        <div class="panel-body">
-          <div class="empty-state">
-            <div class="icon">⚙️</div>
-            <p>Setup wizard coming in Phase 5.</p>
+
+      <div class="panel settings-section">
+        <div class="panel-header">Gmail Connection</div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Google Account</div>
+            <div class="setting-desc">Connect Gmail to start reading leads and drafting replies</div>
+          </div>
+          <div id="gmail-connect-btn">
+            <button class="secondary" disabled>Checking...</button>
           </div>
         </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Poll Interval</div>
+            <div class="setting-desc">How often Lucilease checks for new emails</div>
+          </div>
+          <div style="color:var(--muted);font-size:13px;" id="poll-interval-display">—</div>
+        </div>
       </div>
+
+      <div class="panel settings-section">
+        <div class="panel-header">Coming Soon</div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Agent Profile</div>
+            <div class="setting-desc">Your name, company, and reply tone for AI-drafted emails</div>
+          </div>
+          <button class="secondary" disabled>Phase 2</button>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Google Calendar</div>
+            <div class="setting-desc">Connect to schedule appointments from emails</div>
+          </div>
+          <button class="secondary" disabled>Phase 4</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
 </main>
 
 <script>
-  // ── Navigation ──────────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   function showPage(name, el) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('page-' + name).classList.add('active');
     if (el) el.classList.add('active');
+    if (name === 'inbox')    loadLeads();
+    if (name === 'clients')  loadClients();
+    if (name === 'properties') loadProperties();
   }
 
-  // ── Stats ────────────────────────────────────────────────────────────────────
+  // ── Auth status ───────────────────────────────────────────────────────────
+  let isAuthed = false;
+
+  async function checkAuth() {
+    try {
+      const r = await fetch('/auth/status');
+      const d = await r.json();
+      isAuthed = d.authenticated;
+
+      const dot  = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      const btn  = document.getElementById('gmail-connect-btn');
+      const banner = document.getElementById('gmail-banner');
+
+      if (isAuthed) {
+        dot.className  = 'status-dot';
+        text.textContent = 'Gmail connected';
+        btn.innerHTML  = '<button class="success" disabled>✓ Connected</button>';
+        banner.innerHTML = '';
+      } else {
+        dot.className  = 'status-dot offline';
+        text.textContent = 'Gmail not connected';
+        btn.innerHTML  = '<a class="btn" href="/auth/gmail">Connect Gmail →</a>';
+        banner.innerHTML = `
+          <div class="banner warn">
+            ⚠️ Gmail is not connected.
+            <a href="/auth/gmail">Connect now</a> to start receiving leads.
+          </div>`;
+      }
+    } catch(e) {
+      console.error('Auth check failed', e);
+    }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
   async function refreshStats() {
     try {
-      const res = await fetch('/api/stats');
-      const d = await res.json();
+      const r = await fetch('/api/stats');
+      const d = await r.json();
       document.getElementById('stat-leads-new').textContent   = d.leads_new;
       document.getElementById('stat-leads-total').textContent = d.leads_total;
       document.getElementById('stat-clients').textContent     = d.clients;
       document.getElementById('stat-properties').textContent  = d.properties;
-      document.getElementById('inbox-badge').textContent      = d.leads_new;
+
+      const badge = document.getElementById('inbox-badge');
+      badge.textContent = d.leads_new;
+      badge.className   = 'badge' + (d.leads_new > 0 ? '' : ' zero');
+    } catch(e) { console.error('Stats failed', e); }
+  }
+
+  // ── Leads ─────────────────────────────────────────────────────────────────
+  async function loadLeads() {
+    const container = document.getElementById('leads-container');
+    try {
+      const r = await fetch('/api/leads?status=new');
+      const leads = await r.json();
+
+      document.getElementById('leads-count').textContent =
+        leads.length ? `${leads.length} new` : '';
+
+      if (!leads.length) {
+        container.innerHTML = `<div class="empty-state">
+          <div class="icon">📭</div>
+          <p>${isAuthed ? 'No new leads. Inbox is clear.' : 'Connect Gmail in Settings to start.'}</p>
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Email</th><th>Phone</th>
+            <th>Subject</th><th>Budget</th><th>Received</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            ${leads.map(l => `
+              <tr id="lead-row-${l.id}">
+                <td>${l.name || '—'}</td>
+                <td><a href="mailto:${l.from_email}" style="color:var(--accent2)">${l.from_email}</a></td>
+                <td>${l.phone || '—'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
+                <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
+                <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
+                <td>
+                  <div class="actions">
+                    <button class="secondary" disabled title="Coming in Phase 2">✍ Draft</button>
+                    <button class="success" onclick="addClient(${l.id})">+ Client</button>
+                    <button class="danger" onclick="handleLead(${l.id})">✓ Done</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+
+      // Also update dashboard recent leads
+      updateRecentLeads(leads.slice(0, 5));
     } catch(e) {
-      console.error('Stats fetch failed', e);
+      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load leads.</p></div>`;
     }
   }
 
-  // ── Init ─────────────────────────────────────────────────────────────────────
+  function updateRecentLeads(leads) {
+    const el = document.getElementById('recent-leads-container');
+    if (!leads.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Budget</th><th>Received</th></tr></thead>
+        <tbody>
+          ${leads.map(l => `
+            <tr>
+              <td>${l.name || '—'}</td>
+              <td style="color:var(--accent2)">${l.from_email}</td>
+              <td>${l.subject || '—'}</td>
+              <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
+              <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function handleLead(id) {
+    await fetch(`/api/leads/${id}/handle`, { method: 'POST' });
+    document.getElementById(`lead-row-${id}`)?.remove();
+    refreshStats();
+  }
+
+  async function addClient(id) {
+    const r = await fetch(`/api/leads/${id}/add-client`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      alert('Client added!');
+      refreshStats();
+    }
+  }
+
+  async function manualPoll() {
+    const btn = document.getElementById('poll-btn');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    try {
+      const r = await fetch('/api/poll', { method: 'POST' });
+      const d = await r.json();
+      btn.textContent = `↻ Check now (${d.new_leads} new)`;
+      await loadLeads();
+      await refreshStats();
+    } catch(e) {
+      btn.textContent = '↻ Check now';
+    }
+    btn.disabled = false;
+  }
+
+  // ── Clients ───────────────────────────────────────────────────────────────
+  async function loadClients() {
+    const container = document.getElementById('clients-container');
+    try {
+      const r = await fetch('/api/clients');
+      const clients = await r.json();
+      if (!clients.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>No clients yet.</p></div>`;
+        return;
+      }
+      container.innerHTML = `
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Added</th></tr></thead>
+          <tbody>
+            ${clients.map(c => `
+              <tr>
+                <td>${c.name}</td>
+                <td><a href="mailto:${c.email}" style="color:var(--accent2)">${c.email || '—'}</a></td>
+                <td>${c.phone || '—'}</td>
+                <td><span class="tag active">${c.status}</span></td>
+                <td style="color:var(--muted);font-size:12px">${formatDate(c.created_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
+    }
+  }
+
+  // ── Properties ────────────────────────────────────────────────────────────
+  async function loadProperties() {
+    const container = document.getElementById('properties-container');
+    try {
+      const r = await fetch('/api/properties');
+      const props = await r.json();
+      if (!props.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">🏢</div><p>No properties yet.</p></div>`;
+        return;
+      }
+      container.innerHTML = `
+        <table>
+          <thead><tr><th>Address</th><th>Type</th><th>Bed/Bath</th><th>Price</th><th>Status</th></tr></thead>
+          <tbody>
+            ${props.map(p => `
+              <tr>
+                <td>${p.address}</td>
+                <td><span class="tag ${p.type}">${p.type}</span></td>
+                <td>${p.bedrooms || '—'} bd / ${p.bathrooms || '—'} ba</td>
+                <td>${p.price_monthly ? '$' + p.price_monthly.toLocaleString() + '/mo' :
+                     p.price_sale    ? '$' + p.price_sale.toLocaleString() : '—'}</td>
+                <td><span class="tag active">${p.status}</span></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load.</p></div>`;
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function formatDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function refreshAll() {
+    await Promise.all([checkAuth(), refreshStats()]);
+  }
+
+  // ── Poll interval display ─────────────────────────────────────────────────
+  function setPollDisplay() {
+    const secs = 300; // default, could fetch from /health
+    const mins = Math.round(secs / 60);
+    document.getElementById('poll-interval-display').textContent =
+      mins >= 1 ? `Every ${mins} minute${mins > 1 ? 's' : ''}` : `Every ${secs}s`;
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
   document.getElementById('header-date').textContent = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
 
-  refreshStats();
-  setInterval(refreshStats, 30000);
+  refreshAll();
+  loadLeads(); // preload for dashboard recent leads
+  setPollDisplay();
+  setInterval(refreshAll, 30000);
 </script>
 </body>
 </html>

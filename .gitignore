@@ -1,0 +1,16 @@
+# Secrets — never commit these
+.env
+data/token.json
+data/lucilease.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
