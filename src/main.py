@@ -130,6 +130,41 @@ async def handle_lead(lead_id: int):
     return {"ok": True}
 
 
+@app.post("/api/leads/{lead_id}/archive")
+async def archive_lead(lead_id: int):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE leads SET status='archived' WHERE id=?", (lead_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/leads/{lead_id}/unarchive")
+async def unarchive_lead(lead_id: int):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE leads SET status='new' WHERE id=?", (lead_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+class BulkArchiveRequest(BaseModel):
+    ids: list[int]
+
+@app.post("/api/leads/archive-bulk")
+async def archive_bulk(req: BulkArchiveRequest):
+    conn = get_conn()
+    for lead_id in req.ids:
+        conn.execute("UPDATE leads SET status='archived' WHERE id=?", (lead_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "archived": len(req.ids)}
+
+
 @app.post("/api/leads/{lead_id}/add-client")
 async def add_client_from_lead(lead_id: int):
     conn = get_conn()

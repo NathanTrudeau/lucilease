@@ -33,6 +33,7 @@ def init_db():
             phone       TEXT,
             subject     TEXT,
             body_excerpt TEXT,
+            body_full   TEXT,
             budget_monthly_usd INTEGER,
             status      TEXT    NOT NULL DEFAULT 'new',
             first_seen_at TEXT  NOT NULL,
@@ -40,6 +41,15 @@ def init_db():
             gmail_msg_id TEXT
         )
     """)
+
+    # Migrate leads table
+    lead_cols = {row["name"] for row in cur.execute("PRAGMA table_info(leads)").fetchall()}
+    for col, sql in {
+        "body_full": "ALTER TABLE leads ADD COLUMN body_full TEXT",
+    }.items():
+        if col not in lead_cols:
+            try: cur.execute(sql); print(f"[db] Migrated leads: added '{col}'")
+            except Exception as e: print(f"[db] leads migration warning ({col}): {e}")
 
     # Clients — contacts the agent is working with
     cur.execute("""
@@ -106,6 +116,7 @@ def init_db():
         "status":    "ALTER TABLE drafts ADD COLUMN status TEXT",
         "error_msg": "ALTER TABLE drafts ADD COLUMN error_msg TEXT",
         "updated_at":"ALTER TABLE drafts ADD COLUMN updated_at TEXT",
+        "is_new":    "ALTER TABLE drafts ADD COLUMN is_new INTEGER NOT NULL DEFAULT 0",
     }
     for col, sql in migrations.items():
         if col not in existing_cols:
