@@ -234,6 +234,17 @@ class DraftIn(BaseModel):
     body:     str
 
 
+@app.get("/api/drafts/sent")
+async def get_sent_drafts():
+    """Return all sent drafts."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM drafts WHERE status='sent' ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/drafts")
 async def get_drafts():
     conn = get_conn()
@@ -385,6 +396,49 @@ async def push_draft_to_gmail(draft_id: int):
     except Exception as e:
         conn.close()
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/drafts/{draft_id}/send")
+async def send_single_draft(draft_id: int):
+    """Send a single draft via Gmail."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+    conn.close()
+    if not row:
+        return {"ok": False, "error": "Draft not found"}
+    row = dict(row)
+
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail not connected"}
+
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    try:
+        if row.get("gmail_draft_id"):
+            await asyncio.to_thread(gm.send_gmail_draft, creds, row["gmail_draft_id"])
+        else:
+            await asyncio.to_thread(
+                gm.send_gmail_message, creds,
+                row["to_email"], row["subject"], row["body"]
+            )
+        conn2 = get_conn()
+        conn2.execute(
+            "UPDATE drafts SET status='sent', error_msg=NULL, updated_at=? WHERE id=?",
+            (now, draft_id)
+        )
+        conn2.commit()
+        conn2.close()
+        return {"ok": True}
+    except Exception as e:
+        err = str(e)
+        conn2 = get_conn()
+        conn2.execute(
+            "UPDATE drafts SET status='failed', error_msg=?, updated_at=? WHERE id=?",
+            (err, now, draft_id)
+        )
+        conn2.commit()
+        conn2.close()
+        return {"ok": False, "error": err}
 
 
 @app.post("/api/drafts/send-all")

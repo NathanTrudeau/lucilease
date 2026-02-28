@@ -435,6 +435,10 @@
     <a onclick="showPage('properties', this)">
       <span class="icon">🏢</span> Properties
     </a>
+    <a onclick="showPage('sent', this)">
+      <span class="icon">📤</span> Sent
+      <span class="badge zero" id="sent-badge">0</span>
+    </a>
     <a onclick="showPage('archive', this)">
       <span class="icon">📦</span> Archive
       <span class="badge zero" id="archive-badge">0</span>
@@ -830,6 +834,27 @@
     </div>
   </div>
 
+  <!-- ── Sent ── -->
+  <div id="page-sent" class="page">
+    <header>
+      <div>
+        <h2>Sent</h2>
+        <p>Emails sent through Lucilease</p>
+      </div>
+    </header>
+    <div class="content">
+      <div class="panel">
+        <div class="panel-header">
+          Sent Emails
+          <span id="sent-count" style="color:var(--muted);font-weight:400;font-size:12px;"></span>
+        </div>
+        <div id="sent-container">
+          <div class="empty-state"><div class="icon">📤</div><p>Nothing sent yet.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Archive ── -->
   <div id="page-archive" class="page">
     <header>
@@ -1002,6 +1027,7 @@
     if (name === 'clients')    loadClients();
     if (name === 'properties') loadProperties();
     if (name === 'archive')    loadArchive();
+    if (name === 'sent')       loadSent();
   }
 
   // ── Theme ─────────────────────────────────────────────────────────────────
@@ -1657,44 +1683,39 @@
   async function generateDraft(leadId, btn) {
     btn.disabled = true;
     btn.textContent = '⏳ Drafting...';
-
-    document.getElementById('draft-modal-content').innerHTML =
-      '<p style="color:var(--muted);text-align:center;padding:20px">Generating with Claude Sonnet...</p>';
-    document.getElementById('draft-gmail-link').style.display = 'none';
-    openModal('draft-modal');
-
     try {
       const r = await fetch(`/api/leads/${leadId}/draft`, { method: 'POST' });
       const d = await r.json();
-
       if (!d.ok) throw new Error(d.error || 'Draft failed');
-
-      document.getElementById('draft-modal-content').innerHTML = `
-        <div style="margin-bottom:12px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Subject</div>
-          <div style="font-size:13px;font-weight:500">${d.subject}</div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Reply</div>
-        <div class="draft-preview">${d.body}</div>
-        ${d.gmail_draft_id
-          ? '<p style="margin-top:12px;font-size:12px;color:var(--green)">✓ Saved to Gmail Drafts</p>'
-          : '<p style="margin-top:12px;font-size:12px;color:var(--muted)">Draft saved locally (Gmail draft unavailable)</p>'
-        }`;
-
-      if (d.gmail_draft_id) {
-        const gmailLink = document.getElementById('draft-gmail-link');
-        gmailLink.href = 'https://mail.google.com/mail/#drafts';
-        gmailLink.style.display = 'inline-flex';
-      }
-
       btn.textContent = '✓ Drafted';
-      loadDrafts(); // refresh badge
+      showToast(d.gmail_draft_id ? '✓ Draft saved to Gmail' : '✓ Draft saved locally');
+      loadDrafts(); // refresh badge + list
     } catch(e) {
-      document.getElementById('draft-modal-content').innerHTML =
-        `<p style="color:var(--red);text-align:center;padding:20px">Error: ${e.message}</p>`;
+      showToast('✗ Draft failed: ' + e.message, true);
       btn.disabled = false;
       btn.textContent = '✍ Draft';
     }
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg, isError = false) {
+    let toast = document.getElementById('luci-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'luci-toast';
+      toast.style.cssText = `
+        position:fixed;bottom:24px;right:24px;z-index:9999;
+        background:var(--surface);border:1px solid var(--border);
+        color:var(--text);padding:12px 20px;border-radius:10px;
+        font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.4);
+        transition:opacity 0.3s;pointer-events:none;`;
+      document.body.appendChild(toast);
+    }
+    toast.style.color = isError ? 'var(--red)' : 'var(--green)';
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
   }
 
   // ── Drafts ───────────────────────────────────────────────────────────────
@@ -1742,6 +1763,9 @@
                     <button class="secondary" onclick="duplicateDraft(${d.id})" title="Duplicate this draft">⧉ Dupe</button>
                     ${d.status === 'local' || d.status === 'failed'
                       ? `<button class="secondary" onclick="pushDraftToGmail(${d.id}, this)">📨 Gmail</button>`
+                      : ''}
+                    ${d.status !== 'duplicate'
+                      ? `<button class="danger" id="send-btn-${d.id}" onclick="sendSingleDraft(${d.id}, this)" style="font-weight:700">📤 SEND</button>`
                       : ''}
                     <button class="danger" onclick="deleteDraft(${d.id})">Delete</button>
                   </div>
@@ -1831,11 +1855,74 @@
     else alert('Duplicate failed: ' + d.error);
   }
 
+  async function sendSingleDraft(id, btn) {
+    const draft = _draftsCache.find(d => d.id === id);
+    const to = draft?.to_email || 'this recipient';
+    if (!confirm(`Send this email to ${to}?\n\nThis will send immediately via Gmail. This cannot be undone.`)) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ Sending...';
+    try {
+      const r = await fetch(`/api/drafts/${id}/send`, { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById(`draft-row-${id}`)?.remove();
+        await loadDrafts();
+        await loadSent();
+      } else {
+        alert(`Send failed: ${d.error}`);
+        btn.disabled = false;
+        btn.textContent = '📤 SEND';
+      }
+    } catch(e) {
+      alert('Send error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '📤 SEND';
+    }
+  }
+
   async function deleteDraft(id) {
     if (!confirm('Delete this draft?')) return;
     await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
     document.getElementById(`draft-row-${id}`)?.remove();
     await loadDrafts();
+  }
+
+  // ── Sent tab ──────────────────────────────────────────────────────────────
+  async function loadSent() {
+    const container = document.getElementById('sent-container');
+    if (!container) return;
+    try {
+      const r = await fetch('/api/drafts/sent');
+      const sent = await r.json();
+
+      const badge = document.getElementById('sent-badge');
+      badge.textContent = sent.length;
+      badge.className = 'badge' + (sent.length > 0 ? '' : ' zero');
+      const countEl = document.getElementById('sent-count');
+      if (countEl) countEl.textContent = sent.length ? `${sent.length} sent` : '';
+
+      if (!sent.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">📤</div><p>Nothing sent yet.</p></div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>To</th><th>Subject</th><th>Sent</th>
+          </tr></thead>
+          <tbody>
+            ${sent.map(d => `
+              <tr>
+                <td style="color:var(--accent2)">${d.to_email || '—'}</td>
+                <td>${d.subject || '—'}</td>
+                <td style="color:var(--muted);font-size:12px">${formatDate(d.updated_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load sent emails.</p></div>`;
+    }
   }
 
   // ── Client picker for draft modal ─────────────────────────────────────────
@@ -2015,6 +2102,7 @@
   loadLeads();    // preload for dashboard recent leads
   loadDrafts();   // preload drafts badge
   loadArchive();  // preload archive badge
+  loadSent();     // preload sent badge
   setPollDisplay();
   buildSwatches();
   setInterval(refreshAll, 30000);
