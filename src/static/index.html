@@ -1132,10 +1132,14 @@
     <div class="content">
       <div class="panel" style="padding:0">
         <!-- Day-of-week header -->
-        <div id="cal-dow-header" style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border)">
-          ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
-            `<div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">${d}</div>`
-          ).join('')}
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border)">
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Sun</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Mon</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Tue</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Wed</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Thu</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Fri</div>
+          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted)">Sat</div>
         </div>
         <div id="calendar-container" style="overflow-y:auto">
           <div class="empty-state"><div class="icon">📅</div><p>Loading…</p></div>
@@ -2798,7 +2802,7 @@
       }).join('');
 
       html += `
-        <div style="min-height:100px;padding:8px 6px 6px 8px;background:${bg};${borderRight};${borderBottom};vertical-align:top;position:relative">
+        <div style="min-height:140px;height:calc((100vh - 230px) / ${Math.ceil(totalCells/7)});padding:8px 6px 6px 8px;background:${bg};${borderRight};${borderBottom};vertical-align:top;position:relative;box-sizing:border-box;overflow:hidden">
           <div style="font-size:13px;font-weight:${dayWeight};color:${dayColor};margin-bottom:5px;${isToday ? 'background:var(--accent);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px' : ''}">
             ${inMonth ? dayNum : ''}
           </div>
