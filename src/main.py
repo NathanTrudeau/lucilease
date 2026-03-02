@@ -888,8 +888,9 @@ async def get_appointments(status: str = "pending"):
 @app.post("/api/appointments/{appt_id}/accept")
 async def accept_appointment(appt_id: int, body: dict = None):
     """
-    Accept an appointment: create Google Calendar event + send confirmation email.
-    body may contain: { "confirmed_datetime": "YYYY-MM-DDTHH:MM:SS" }
+    Step 1 of accept flow: create Google Calendar event + generate draft confirmation email.
+    Does NOT send the email — returns the draft for agent review.
+    body may contain: { "confirmed_datetime": "YYYY-MM-DDTHH:MM:SS", "confirmed_address": "..." }
     """
     from ai import build_confirmation_email, get_agent_profile, mtype_label
     conn = get_conn()
@@ -908,12 +909,11 @@ async def accept_appointment(appt_id: int, body: dict = None):
     timezone = cfg.get("timezone", "America/Los_Angeles")
     profile  = get_agent_profile()
 
-    # Use confirmed_datetime override if provided, else fall back to proposed
     confirmed_body = body or {}
     dt_str         = confirmed_body.get("confirmed_datetime") or appt.get("proposed_datetime")
     confirmed_addr = confirmed_body.get("confirmed_address") or appt.get("proposed_address")
 
-    # Build a human-readable version of the confirmed datetime for the email body
+    # Human-readable confirmed datetime for email body
     confirmed_date_text = appt.get("proposed_date_text") or dt_str or "the scheduled time"
     if dt_str:
         try:
@@ -923,17 +923,16 @@ async def accept_appointment(appt_id: int, body: dict = None):
             local = naive.astimezone(tz)
             confirmed_date_text = local.strftime("%A, %B %-d at %-I:%M %p")
         except Exception:
-            pass  # fall back to proposed_date_text
+            pass
 
-    # Patch appt dict so build_confirmation_email uses confirmed values
     appt_confirmed = {**appt, "proposed_date_text": confirmed_date_text, "proposed_address": confirmed_addr}
 
-    # Create calendar event
+    # Create Google Calendar event
     calendar_event_id = None
     cal_error = None
     if dt_str:
         try:
-            summary  = f"{mtype_label(appt.get('meeting_type')).title()} — {appt.get('client_name') or appt.get('client_email', 'Client')}"
+            summary = f"{mtype_label(appt.get('meeting_type')).title()} — {appt.get('client_name') or appt.get('client_email', 'Client')}"
             calendar_event_id = await asyncio.to_thread(
                 cal.create_event, creds,
                 summary, confirmed_addr or "", dt_str, timezone,
@@ -943,65 +942,84 @@ async def accept_appointment(appt_id: int, body: dict = None):
             cal_error = str(e)
             print(f"[appt] Calendar event creation failed: {e}")
 
-    # Build confirmation email using confirmed datetime + address
-    email_body = build_confirmation_email(appt_confirmed, profile)
-    subject    = f"Confirmed: {mtype_label(appt.get('meeting_type')).title()}"
-    now        = datetime.datetime.utcnow().isoformat() + "Z"
-    email_error = None
-
-    to_email = appt.get("client_email") or ""
-    if to_email:
-        # Try sending in-thread first; if Gmail rejects the thread_id (e.g. seeded/fake),
-        # fall back to sending as a fresh email so the message always goes out.
-        thread_id = appt.get("thread_id")
-        sent = False
-        if thread_id:
-            try:
-                await asyncio.to_thread(
-                    gm.send_gmail_message, creds, to_email, subject, email_body,
-                    thread_id=thread_id,
-                )
-                sent = True
-            except Exception as e:
-                print(f"[appt] In-thread send failed ({e}), retrying without thread_id...")
-        if not sent:
-            try:
-                await asyncio.to_thread(
-                    gm.send_gmail_message, creds, to_email, subject, email_body,
-                )
-            except Exception as e:
-                email_error = str(e)
-                print(f"[appt] Confirmation email send failed: {e}")
-    else:
-        email_error = "No client email on appointment"
-
-    # Mark accepted + store event id (even if email/cal had errors — partial success)
+    # Mark appointment accepted in DB
+    now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
-    conn.execute("""
-        UPDATE appointments
-        SET status='accepted', calendar_event_id=?, updated_at=?
-        WHERE id=?
-    """, (calendar_event_id, now, appt_id))
-
-    # Drop confirmation email into the Sent tab (drafts table, status='sent')
-    if not email_error and to_email:
-        conn.execute("""
-            INSERT INTO drafts (lead_id, to_email, subject, body, status, created_at)
-            VALUES (?,?,?,?,?,?)
-        """, (appt.get("lead_id"), to_email, subject, email_body, "sent", now))
-
+    conn.execute(
+        "UPDATE appointments SET status='accepted', calendar_event_id=?, updated_at=? WHERE id=?",
+        (calendar_event_id, now, appt_id)
+    )
     conn.commit()
     conn.close()
 
-    if email_error:
-        return {"ok": False, "error": f"Appointment saved but email failed: {email_error}",
-                "calendar_event_id": calendar_event_id,
-                "email_sent": False, "cal_created": bool(calendar_event_id)}
+    # Build draft email body — returned to frontend for review, not sent yet
+    email_body = build_confirmation_email(appt_confirmed, profile)
+    subject    = f"Confirmed: {mtype_label(appt.get('meeting_type')).title()}"
 
-    return {"ok": True, "calendar_event_id": calendar_event_id,
-            "cal_warning": cal_error, "confirmed_date_text": confirmed_date_text,
-            "email_sent": True, "cal_created": bool(calendar_event_id),
-            "to_email": to_email}
+    return {
+        "ok": True,
+        "calendar_event_id": calendar_event_id,
+        "cal_created": bool(calendar_event_id),
+        "cal_warning": cal_error,
+        "confirmed_date_text": confirmed_date_text,
+        # Draft email for agent to review
+        "draft": {
+            "to_email": appt.get("client_email") or "",
+            "subject":  subject,
+            "body":     email_body,
+            "lead_id":  appt.get("lead_id"),
+            "thread_id": appt.get("thread_id"),
+            "appt_id":  appt_id,
+        }
+    }
+
+
+@app.post("/api/appointments/{appt_id}/send-confirmation")
+async def send_confirmation_email(appt_id: int, body: dict = None):
+    """
+    Step 2 of accept flow: agent has reviewed the draft — actually send it.
+    body: { "to_email": "...", "subject": "...", "body": "...", "thread_id": "..." }
+    """
+    payload   = body or {}
+    to_email  = payload.get("to_email", "").strip()
+    subject   = payload.get("subject", "").strip()
+    email_body = payload.get("body", "").strip()
+    thread_id = payload.get("thread_id")
+    lead_id   = payload.get("lead_id")
+
+    if not to_email or not email_body:
+        return {"ok": False, "error": "to_email and body are required"}
+
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail not connected"}
+
+    # Try in-thread first, fall back to fresh email
+    sent = False
+    if thread_id:
+        try:
+            await asyncio.to_thread(gm.send_gmail_message, creds, to_email, subject, email_body, thread_id=thread_id)
+            sent = True
+        except Exception as e:
+            print(f"[appt] In-thread send failed ({e}), retrying without thread_id…")
+    if not sent:
+        try:
+            await asyncio.to_thread(gm.send_gmail_message, creds, to_email, subject, email_body)
+            sent = True
+        except Exception as e:
+            return {"ok": False, "error": f"Email send failed: {e}"}
+
+    # Write to Sent tab
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO drafts (lead_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,?)",
+        (lead_id, to_email, subject, email_body, "sent", now)
+    )
+    conn.commit()
+    conn.close()
+
+    return {"ok": True, "to_email": to_email}
 
 
 @app.post("/api/appointments/{appt_id}/reject")

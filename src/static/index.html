@@ -547,6 +547,35 @@
   </div>
 </div>
 
+<!-- ── Confirmation Email Review Modal ── -->
+<div class="modal-overlay" id="confirm-email-modal">
+  <div class="modal" style="width:660px">
+    <h3>📧 Review Confirmation Email</h3>
+    <div style="font-size:13px;color:var(--muted);background:var(--bg);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      📅 <span id="cem-cal-status">Calendar event created</span> &nbsp;·&nbsp; Review and edit the email below before sending.
+    </div>
+    <input type="hidden" id="cem-appt-id">
+    <input type="hidden" id="cem-thread-id">
+    <input type="hidden" id="cem-lead-id">
+    <div class="form-group">
+      <label>To</label>
+      <input type="email" id="cem-to" />
+    </div>
+    <div class="form-group">
+      <label>Subject</label>
+      <input type="text" id="cem-subject" />
+    </div>
+    <div class="form-group">
+      <label>Message</label>
+      <textarea id="cem-body" style="min-height:130px;font-size:13px;line-height:1.6"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('confirm-email-modal')">Cancel (don't send)</button>
+      <button class="ai-action" id="cem-send-btn" onclick="sendConfirmationEmail()">📤 Send Confirmation</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Delete Appointment → Compose Modal ── -->
 <div class="modal-overlay" id="delete-appt-modal">
   <div class="modal" style="width:720px;max-height:90vh;display:flex;flex-direction:column">
@@ -2589,18 +2618,27 @@
       if (d.ok) {
         closeModal('accept-appt-modal');
         document.getElementById(`appt-card-${id}`)?.remove();
-        const emailLine = d.email_sent
-          ? `📧 Confirmation email sent to ${d.to_email || appt?.client_email || 'client'}`
-          : '⚠️ Email not sent';
-        const calLine = d.cal_created
-          ? '📅 Calendar event created'
-          : d.cal_warning
-            ? '⚠️ Calendar not connected — event skipped'
-            : '📅 Calendar event created';
-        showToast(`✅ Appointment accepted\n${emailLine}\n${calLine}\n📤 Saved to Sent tab`);
-        await loadSent(); // refresh sent tab badge + cache
         await loadAppointments();
         await loadCalendarEvents();
+
+        // Show calendar result
+        const calStatus = d.cal_created
+          ? '📅 Calendar event created'
+          : d.cal_warning
+            ? `⚠️ Calendar not connected — event skipped`
+            : '📅 Scheduled';
+        document.getElementById('cem-cal-status').textContent = calStatus;
+
+        // Pre-fill review modal with generated draft
+        const draft = d.draft || {};
+        document.getElementById('cem-appt-id').value   = id;
+        document.getElementById('cem-thread-id').value = draft.thread_id || '';
+        document.getElementById('cem-lead-id').value   = draft.lead_id   || '';
+        document.getElementById('cem-to').value        = draft.to_email  || '';
+        document.getElementById('cem-subject').value   = draft.subject   || '';
+        document.getElementById('cem-body').value      = draft.body      || '';
+
+        openModal('confirm-email-modal');
       } else {
         alert('Accept failed: ' + (d.error || 'unknown'));
       }
@@ -2609,6 +2647,41 @@
     }
     btn.disabled = false;
     btn.textContent = '✅ Accept & Schedule [AI]';
+  }
+
+  async function sendConfirmationEmail() {
+    const btn = document.getElementById('cem-send-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Sending…';
+
+    const apptId   = document.getElementById('cem-appt-id').value;
+    const to       = document.getElementById('cem-to').value.trim();
+    const subject  = document.getElementById('cem-subject').value.trim();
+    const body     = document.getElementById('cem-body').value.trim();
+    const threadId = document.getElementById('cem-thread-id').value || null;
+    const leadId   = document.getElementById('cem-lead-id').value   || null;
+
+    if (!to || !body) { alert('To and message body are required.'); btn.disabled = false; btn.textContent = '📤 Send Confirmation'; return; }
+
+    try {
+      const r = await fetch(`/api/appointments/${apptId}/send-confirmation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_email: to, subject, body, thread_id: threadId, lead_id: leadId }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        closeModal('confirm-email-modal');
+        showToast(`✅ Appointment accepted\n📧 Confirmation sent to ${d.to_email}\n📤 Saved to Sent tab`);
+        await loadSent();
+      } else {
+        alert('Send failed: ' + (d.error || 'unknown'));
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '📤 Send Confirmation';
   }
 
   async function rejectAppointment(id, btn) {
