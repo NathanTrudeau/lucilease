@@ -409,6 +409,16 @@
       background: var(--bg); border: 1px solid var(--border);
       border-radius: 8px; color: var(--text); font-size: 14px;
       outline: none; transition: border-color 0.15s;
+      box-sizing: border-box;
+    }
+    /* Date/time pickers need extra room for AM/PM and the calendar icon */
+    .form-group input[type="datetime-local"],
+    .form-group input[type="date"],
+    .form-group input[type="time"] {
+      min-width: 240px;
+      font-size: 15px;
+      padding: 12px 16px;
+      letter-spacing: 0.3px;
     }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
       border-color: var(--accent);
@@ -515,7 +525,7 @@
 
 <!-- ── Accept Appointment Modal (datetime confirm) ── -->
 <div class="modal-overlay" id="accept-appt-modal">
-  <div class="modal" style="width:560px">
+  <div class="modal" style="width:620px">
     <h3>✅ Confirm Appointment</h3>
     <input type="hidden" id="accept-appt-id">
     <div class="form-group">
@@ -2765,9 +2775,9 @@
       <select id="${tempId}-day" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px">
         ${DAYS.map(d => `<option value="${d}">${DAY_LABELS[d]}</option>`).join('')}
       </select>
-      <input type="time" id="${tempId}-start" value="10:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px">
+      <input type="time" id="${tempId}-start" value="10:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:7px 10px;font-size:13px;min-width:130px">
       <span style="color:var(--muted);font-size:12px">–</span>
-      <input type="time" id="${tempId}-end" value="13:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px">
+      <input type="time" id="${tempId}-end" value="13:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:7px 10px;font-size:13px;min-width:130px">
       <input type="text" id="${tempId}-label" placeholder="Label (optional)" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;flex:1">
       <button onclick="confirmAddOhSlot('${tempId}')" style="padding:4px 10px;font-size:12px">✓</button>
       <button class="secondary" onclick="document.getElementById('${tempId}').remove()" style="padding:4px 8px;font-size:12px">✕</button>`;
@@ -2824,10 +2834,10 @@
           <span style="font-size:13px;font-weight:500;text-transform:capitalize">${w.day}</span>
         </label>
         <input type="time" id="avail-${w.day}-start" value="${w.start}"
-          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
-        <span style="color:var(--muted);font-size:12px">–</span>
+          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:8px 12px;font-size:14px;min-width:130px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
+        <span style="color:var(--muted);font-size:13px;padding:0 4px">–</span>
         <input type="time" id="avail-${w.day}-end" value="${w.end}"
-          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
+          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:8px 12px;font-size:14px;min-width:130px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
       </div>`).join('');
   }
 
