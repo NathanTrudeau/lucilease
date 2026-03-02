@@ -2589,7 +2589,8 @@
       if (d.ok) {
         closeModal('accept-appt-modal');
         document.getElementById(`appt-card-${id}`)?.remove();
-        showToast('✅ Appointment scheduled + confirmation sent [AI]');
+        const calNote = d.cal_warning ? ' (Calendar sync skipped — connect Google Calendar)' : '';
+        showToast(`✅ Confirmation sent to ${appt?.client_email || 'client'} · Appointment accepted${calNote}`);
         await loadAppointments();
         await loadCalendarEvents();
       } else {
