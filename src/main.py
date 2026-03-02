@@ -917,8 +917,9 @@ async def accept_appointment(appt_id: int, body: dict = None):
     confirmed_date_text = appt.get("proposed_date_text") or dt_str or "the scheduled time"
     if dt_str:
         try:
-            import pytz, datetime as _dt2
-            tz    = pytz.timezone(timezone)
+            from zoneinfo import ZoneInfo
+            import datetime as _dt2
+            tz    = ZoneInfo(timezone)
             naive = _dt2.datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
             local = naive.astimezone(tz)
             confirmed_date_text = local.strftime("%A, %B %-d at %-I:%M %p")
