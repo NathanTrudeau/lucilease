@@ -2589,8 +2589,16 @@
       if (d.ok) {
         closeModal('accept-appt-modal');
         document.getElementById(`appt-card-${id}`)?.remove();
-        const calNote = d.cal_warning ? ' (Calendar sync skipped — connect Google Calendar)' : '';
-        showToast(`✅ Confirmation sent to ${appt?.client_email || 'client'} · Appointment accepted${calNote}`);
+        const emailLine = d.email_sent
+          ? `📧 Confirmation email sent to ${d.to_email || appt?.client_email || 'client'}`
+          : '⚠️ Email not sent';
+        const calLine = d.cal_created
+          ? '📅 Calendar event created'
+          : d.cal_warning
+            ? '⚠️ Calendar not connected — event skipped'
+            : '📅 Calendar event created';
+        showToast(`✅ Appointment accepted\n${emailLine}\n${calLine}\n📤 Saved to Sent tab`);
+        await loadSent(); // refresh sent tab badge + cache
         await loadAppointments();
         await loadCalendarEvents();
       } else {

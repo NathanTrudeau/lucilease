@@ -982,15 +982,26 @@ async def accept_appointment(appt_id: int, body: dict = None):
         SET status='accepted', calendar_event_id=?, updated_at=?
         WHERE id=?
     """, (calendar_event_id, now, appt_id))
+
+    # Drop confirmation email into the Sent tab (drafts table, status='sent')
+    if not email_error and to_email:
+        conn.execute("""
+            INSERT INTO drafts (lead_id, to_email, subject, body, status, created_at)
+            VALUES (?,?,?,?,?,?)
+        """, (appt.get("lead_id"), to_email, subject, email_body, "sent", now))
+
     conn.commit()
     conn.close()
 
     if email_error:
         return {"ok": False, "error": f"Appointment saved but email failed: {email_error}",
-                "calendar_event_id": calendar_event_id}
+                "calendar_event_id": calendar_event_id,
+                "email_sent": False, "cal_created": bool(calendar_event_id)}
 
     return {"ok": True, "calendar_event_id": calendar_event_id,
-            "cal_warning": cal_error, "confirmed_date_text": confirmed_date_text}
+            "cal_warning": cal_error, "confirmed_date_text": confirmed_date_text,
+            "email_sent": True, "cal_created": bool(calendar_event_id),
+            "to_email": to_email}
 
 
 @app.post("/api/appointments/{appt_id}/reject")
