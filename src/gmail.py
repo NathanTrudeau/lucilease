@@ -266,6 +266,27 @@ def _extract_body(payload: dict) -> str:
     return ""
 
 
+def archive_gmail_message(creds, msg_id: str) -> bool:
+    """
+    Archive a Gmail message by removing the INBOX label.
+    Returns True on success, False if msg_id is None or call fails.
+    """
+    if not msg_id:
+        return False
+    try:
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        service.users().messages().modify(
+            userId="me",
+            id=msg_id,
+            body={"removeLabelIds": ["INBOX"]},
+        ).execute()
+        print(f"[gmail] Archived message {msg_id} from Gmail inbox.")
+        return True
+    except Exception as e:
+        print(f"[gmail] Gmail archive failed for {msg_id}: {e}")
+        return False
+
+
 def send_gmail_message(creds, to: str, subject: str, body: str,
                        thread_id=None) -> str:
     """Send an email immediately. Returns sent message id."""

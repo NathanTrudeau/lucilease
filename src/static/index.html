@@ -304,6 +304,32 @@
     /* Sort button active */
     button.sort-active { background: rgba(108,99,255,0.2); color: var(--accent2); }
 
+    /* ── Search bar ── */
+    .tab-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .tab-search input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .tab-search input:focus { border-color: var(--accent); }
+    .tab-search input::placeholder { color: var(--muted); }
+    .tab-search .search-count {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
     /* ── Empty state ── */
@@ -820,6 +846,10 @@
       </div>
     </header>
     <div class="content">
+      <div class="tab-search">
+        <input type="text" id="search-inbox" placeholder="🔍 Search name, email, subject, body…" oninput="filterTab('inbox')">
+        <span class="search-count" id="search-inbox-count"></span>
+      </div>
       <div class="panel">
         <div class="panel-header">
           New Leads
@@ -841,6 +871,10 @@
       </div>
     </header>
     <div class="content">
+      <div class="tab-search">
+        <input type="text" id="search-sent" placeholder="🔍 Search recipient, subject, body…" oninput="filterTab('sent')">
+        <span class="search-count" id="search-sent-count"></span>
+      </div>
       <div class="panel">
         <div class="panel-header">
           Sent Emails
@@ -865,6 +899,10 @@
       </div>
     </header>
     <div class="content">
+      <div class="tab-search">
+        <input type="text" id="search-archive" placeholder="🔍 Search name, email, subject, body…" oninput="filterTab('archive')">
+        <span class="search-count" id="search-archive-count"></span>
+      </div>
       <div class="panel">
         <div class="panel-header">
           Archived Leads
@@ -888,6 +926,10 @@
       </div>
     </header>
     <div class="content">
+      <div class="tab-search">
+        <input type="text" id="search-drafts" placeholder="🔍 Search recipient, subject, body…" oninput="filterTab('drafts')">
+        <span class="search-count" id="search-drafts-count"></span>
+      </div>
       <div class="panel">
         <div class="panel-header">
           Pending Drafts
@@ -1024,6 +1066,7 @@
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('page-' + name).classList.add('active');
     if (el) el.classList.add('active');
+    ['inbox','drafts','sent','archive'].forEach(t => { if (t !== name) clearTabSearch(t); });
     if (name === 'inbox')      loadLeads();
     if (name === 'drafts')     loadDrafts();
     if (name === 'clients')    loadClients();
@@ -1210,6 +1253,7 @@
           </tbody>
         </table>`;
 
+      filterTab('inbox');
       // Also update dashboard recent leads
       updateRecentLeads(leads.slice(0, 5));
     } catch(e) {
@@ -1411,6 +1455,7 @@
             `).join('')}
           </tbody>
         </table>`;
+      filterTab('archive');
     } catch(e) {
       container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load archive.</p></div>`;
     }
@@ -1786,6 +1831,62 @@
     toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
   }
 
+  // ── Tab search / filter ───────────────────────────────────────────────────
+  // Each tab renders rows; filterTab hides rows that don't match.
+  // Works on the already-rendered DOM — no re-render needed.
+  const TAB_SEARCH_CFG = {
+    inbox:   { input: 'search-inbox',   countEl: 'search-inbox-count',   rowPrefix: 'lead-row-',    fields: ['name','from_email','subject','body_full','body_excerpt','phone'] },
+    drafts:  { input: 'search-drafts',  countEl: 'search-drafts-count',  rowPrefix: 'draft-row-',   fields: ['to_email','subject','body'] },
+    sent:    { input: 'search-sent',    countEl: 'search-sent-count',    rowPrefix: 'sent-row-',    fields: ['to_email','subject','body'] },
+    archive: { input: 'search-archive', countEl: 'search-archive-count', rowPrefix: 'archive-row-', fields: ['name','from_email','subject','body_full','body_excerpt','phone'] },
+  };
+
+  // Cache map: tab → array of full objects (used for field matching)
+  function _getCache(tab) {
+    if (tab === 'inbox')   return _leadsCache;
+    if (tab === 'drafts')  return _draftsCache;
+    if (tab === 'sent')    return _sentCache;
+    if (tab === 'archive') return _archiveCache;
+    return [];
+  }
+
+  function filterTab(tab) {
+    const cfg   = TAB_SEARCH_CFG[tab];
+    const query = document.getElementById(cfg.input)?.value.trim().toLowerCase() || '';
+    const cache = _getCache(tab);
+    let shown = 0, total = cache.length;
+
+    cache.forEach(item => {
+      const row = document.getElementById(cfg.rowPrefix + item.id);
+      if (!row) return;
+      if (!query) {
+        row.style.display = '';
+        shown++;
+        return;
+      }
+      const haystack = cfg.fields.map(f => (item[f] || '').toLowerCase()).join(' ');
+      const match = haystack.includes(query);
+      row.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+
+    const countEl = document.getElementById(cfg.countEl);
+    if (countEl) {
+      countEl.textContent = query
+        ? `${shown} of ${total} match${shown !== 1 ? 'es' : ''}`
+        : '';
+    }
+  }
+
+  // Clear search when switching tabs
+  function clearTabSearch(tab) {
+    const cfg = TAB_SEARCH_CFG[tab];
+    const el = document.getElementById(cfg?.input);
+    if (el) el.value = '';
+    const countEl = document.getElementById(cfg?.countEl);
+    if (countEl) countEl.textContent = '';
+  }
+
   // ── Drafts ───────────────────────────────────────────────────────────────
   let _draftsCache = [];
 
@@ -1844,6 +1945,7 @@
               </tr>`).join('')}
           </tbody>
         </table>`;
+      filterTab('drafts');
     } catch(e) {
       container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load drafts.</p></div>`;
     }
@@ -1998,6 +2100,7 @@
               </tr>`).join('')}
           </tbody>
         </table>`;
+      filterTab('sent');
     } catch(e) {
       if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load sent emails.</p></div>`;
     }

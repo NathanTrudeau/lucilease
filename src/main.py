@@ -133,22 +133,25 @@ async def handle_lead(lead_id: int):
 @app.post("/api/leads/{lead_id}/archive")
 async def archive_lead(lead_id: int):
     conn = get_conn()
-    conn.execute(
-        "UPDATE leads SET status='archived' WHERE id=?", (lead_id,)
-    )
+    row = conn.execute("SELECT gmail_msg_id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    conn.execute("UPDATE leads SET status='archived' WHERE id=?", (lead_id,))
     conn.commit()
     conn.close()
+    # Mirror archive to Gmail (best-effort)
+    if row and row["gmail_msg_id"]:
+        creds = gm.get_credentials()
+        if creds:
+            await asyncio.to_thread(gm.archive_gmail_message, creds, row["gmail_msg_id"])
     return {"ok": True}
 
 
 @app.post("/api/leads/{lead_id}/unarchive")
 async def unarchive_lead(lead_id: int):
     conn = get_conn()
-    conn.execute(
-        "UPDATE leads SET status='new' WHERE id=?", (lead_id,)
-    )
+    conn.execute("UPDATE leads SET status='new' WHERE id=?", (lead_id,))
     conn.commit()
     conn.close()
+    # Note: we don't move back to Gmail inbox — user can do that in Gmail if needed
     return {"ok": True}
 
 
@@ -158,10 +161,22 @@ class BulkArchiveRequest(BaseModel):
 @app.post("/api/leads/archive-bulk")
 async def archive_bulk(req: BulkArchiveRequest):
     conn = get_conn()
+    msg_ids = []
     for lead_id in req.ids:
+        row = conn.execute("SELECT gmail_msg_id FROM leads WHERE id=?", (lead_id,)).fetchone()
+        if row and row["gmail_msg_id"]:
+            msg_ids.append(row["gmail_msg_id"])
         conn.execute("UPDATE leads SET status='archived' WHERE id=?", (lead_id,))
     conn.commit()
     conn.close()
+    # Mirror all to Gmail (best-effort, parallel)
+    if msg_ids:
+        creds = gm.get_credentials()
+        if creds:
+            await asyncio.gather(*[
+                asyncio.to_thread(gm.archive_gmail_message, creds, mid)
+                for mid in msg_ids
+            ])
     return {"ok": True, "archived": len(req.ids)}
 
 
