@@ -65,6 +65,21 @@ def draft_reply(lead_id: int) -> dict:
             "SELECT * FROM properties WHERE status='active' ORDER BY created_at DESC LIMIT 10"
         ).fetchall()
     ]
+
+    # Fetch open house slots for active properties
+    open_house_slots = {}
+    for p in properties:
+        slots = conn.execute(
+            "SELECT * FROM open_house_slots WHERE property_id=? ORDER BY day_of_week, start_time",
+            (p["id"],)
+        ).fetchall()
+        if slots:
+            open_house_slots[p["id"]] = [dict(s) for s in slots]
+
+    # Fetch agent availability windows + timezone from config
+    cfg = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
+    timezone = cfg.get("timezone", "America/Los_Angeles")
+    avail_raw = cfg.get("availability_windows")
     conn.close()
 
     profile = get_agent_profile()
@@ -72,7 +87,9 @@ def draft_reply(lead_id: int) -> dict:
     agent_company = profile.get("agent_company", "")
     agent_tone    = profile.get("agent_tone", "professional and warm")
 
-    # Build properties context
+    # Build properties context (with open house windows per property)
+    DAY_SHORT = {"monday":"Mon","tuesday":"Tue","wednesday":"Wed","thursday":"Thu",
+                 "friday":"Fri","saturday":"Sat","sunday":"Sun"}
     props_text = ""
     if properties:
         props_text = "\n\nAvailable properties you represent:\n"
@@ -83,6 +100,30 @@ def draft_reply(lead_id: int) -> dict:
             props_text += f"- {p['address']} | {p['type']} | {beds} | {price}\n"
             if p.get("notes"):
                 props_text += f"  Notes: {p['notes']}\n"
+            slots = open_house_slots.get(p["id"], [])
+            if slots:
+                slot_strs = [
+                    f"{DAY_SHORT.get(s['day_of_week'], s['day_of_week'])} {s['start_time']}–{s['end_time']}"
+                    + (f" ({s['label']})" if s.get('label') else "")
+                    for s in slots
+                ]
+                props_text += f"  Open house times: {', '.join(slot_strs)}\n"
+
+    # Build agent availability context
+    avail_text = ""
+    if avail_raw:
+        try:
+            import json
+            windows = json.loads(avail_raw)
+            enabled = [w for w in windows if w.get("enabled")]
+            if enabled:
+                avail_lines = [
+                    f"{DAY_SHORT.get(w['day'], w['day'])} {w['start']}–{w['end']}"
+                    for w in enabled
+                ]
+                avail_text = f"\n\nYour general availability for appointments ({timezone}): {', '.join(avail_lines)}."
+        except Exception:
+            pass
 
     # Budget context
     budget_ctx = ""
@@ -102,13 +143,13 @@ Client inquiry:
 - Subject: {lead.get('subject') or 'N/A'}
 - Message: {lead.get('body_excerpt') or 'N/A'}
 - {budget_ctx}
-{props_text}
+{props_text}{avail_text}
 
 Rules:
 - Maximum 3 short paragraphs. Aim for under 120 words total.
 - First paragraph: warm one-line greeting + acknowledge their specific need.
-- Second paragraph: if a matching property exists, mention it in one sentence. Otherwise skip.
-- Third paragraph: one clear call to action (schedule a showing or quick call).
+- Second paragraph: if a matching property exists, mention it briefly. Otherwise skip.
+- Third paragraph: one clear call to action — if suggesting a showing or meeting, propose a SPECIFIC time that fits within your open house windows or general availability above. Do not suggest vague times like "sometime this week".
 - Do NOT use "I hope this email finds you well" or any filler openers.
 - Do NOT include a subject line or signature — those are added separately.
 - Plain text only, no markdown.
