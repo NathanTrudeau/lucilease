@@ -79,7 +79,6 @@ def get_auth_url() -> str:
     flow.redirect_uri = REDIRECT_URI
     url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
         prompt="consent",
     )
     return url

@@ -69,8 +69,25 @@ async def auth_gmail():
 
 
 @app.get("/auth/callback")
-async def auth_callback(code: str):
-    await asyncio.to_thread(gm.exchange_code, code)
+async def auth_callback(
+    code: str = None,
+    error: str = None,
+    error_description: str = None,
+    state: str = None,
+    scope: str = None,
+):
+    if error:
+        msg = error_description or error
+        print(f"[auth] OAuth error from Google: {msg}")
+        return RedirectResponse(f"/?auth_error={msg}")
+    if not code:
+        print("[auth] OAuth callback received with no code and no error.")
+        return RedirectResponse("/?auth_error=no_code")
+    try:
+        await asyncio.to_thread(gm.exchange_code, code)
+    except Exception as e:
+        print(f"[auth] Token exchange failed: {e}")
+        return RedirectResponse(f"/?auth_error=token_exchange_failed")
     asyncio.create_task(asyncio.to_thread(gm.poll_inbox))
     return RedirectResponse("/?connected=1")
 
