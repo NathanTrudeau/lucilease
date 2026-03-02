@@ -1404,7 +1404,11 @@
                 <td>${l.name || '—'}</td>
                 <td><a href="mailto:${l.from_email}" style="color:var(--accent2)">${l.from_email}</a></td>
                 <td>${l.phone || '—'}</td>
-                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  ${(l.subject || '').includes('[APPOINTMENT]')
+                    ? `<span style="font-size:10px;background:rgba(108,99,255,0.18);color:var(--accent2);padding:1px 6px;border-radius:10px;margin-right:5px;white-space:nowrap">📅 APPT</span>`
+                    : ''}${(l.subject || '—').replace('[APPOINTMENT]','').trim()}
+                </td>
                 <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
                 <td>
@@ -1415,7 +1419,7 @@
                     ${existingEmails.has(l.from_email.toLowerCase())
                       ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
                       : `<button class="success" onclick="addClient(${l.id})">+ Client</button>`}
-                    <button class="secondary" onclick="archiveLeadRow(${l.id})">📦 Archive</button>
+                    <button class="secondary" onclick="archiveLeadRow(${l.id})" title="${(l.subject||'').includes('[APPOINTMENT]') ? 'Archive email — appointment on dashboard stays intact' : 'Archive this email'}">📦 Archive</button>
                   </div>
                 </td>
               </tr>
@@ -2499,7 +2503,7 @@
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;align-items:flex-end">
               <button class="ai-action" onclick="openAcceptModal(${a.id})" style="width:100%">✅ Accept [AI]</button>
-              <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">✗ Reject &amp; Auto-Reply [AI]</button>
+              <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">⏱ Suggest Time [AI]</button>
               <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
             </div>
           </div>
@@ -2571,7 +2575,7 @@
   }
 
   async function rejectAppointment(id, btn) {
-    if (!confirm('Reject this appointment and auto-draft an alternative times email?')) return;
+    if (!confirm('Suggest alternative times? Claude will draft a reply with 2–3 new options and save it as a draft email.')) return;
     btn.disabled = true;
     btn.textContent = '⏳ [AI] Drafting...';
     try {
@@ -2579,23 +2583,45 @@
       const d = await r.json();
       if (d.ok) {
         document.getElementById(`appt-card-${id}`)?.remove();
-        showToast('✗ Rejected — alternative times draft saved [AI]');
+        showToast('⏱ Alternative times drafted — check Drafts tab [AI]');
         await loadAppointments();
         await loadDrafts();
       } else {
-        alert('Reject failed: ' + (d.error || 'unknown'));
+        alert('Suggest time failed: ' + (d.error || 'unknown'));
       }
     } catch(e) {
       alert('Error: ' + e.message);
     }
     btn.disabled = false;
-    btn.textContent = '✗ Reject & Auto-Reply [AI]';
+    btn.textContent = '⏱ Suggest Time [AI]';
   }
 
   let _deleteApptThreadId = null;
+  let _deleteApptPending  = null; // { id, clientName, clientEmail }
 
   async function deleteAppointment(id) {
-    if (!confirm('Remove this appointment? You can compose a message from the thread history.')) return;
+    // Step 1: Ask if they want to draft a custom reply first
+    const appt = _appointmentsCache.find(a => a.id === id);
+    const clientName  = appt?.client_name  || appt?.client_email || 'this client';
+    const clientEmail = appt?.client_email || '';
+    _deleteApptPending = { id, clientName, clientEmail };
+
+    const wantDraft = confirm(`Would you like to draft a custom reply to ${clientName} before deleting this appointment?`);
+    if (wantDraft) {
+      // Open draft/thread compose flow (fetch thread data first)
+      await _openDeleteComposeFlow(id, clientName, clientEmail);
+    } else {
+      // Step 2: Confirm hard delete with reminder
+      const confirmed = confirm(
+        `Are you sure you want to delete this pending appointment?\n\nDon't forget to reply to ${clientName} if needed — they may still be expecting a response.\n\nClick OK to delete, or Cancel to go back.`
+      );
+      if (!confirmed) return; // user backed out — do nothing
+      // Actually delete
+      await _executeDeleteAppointment(id, clientName);
+    }
+  }
+
+  async function _openDeleteComposeFlow(id, clientName, clientEmail) {
     try {
       const r = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
       const d = await r.json();
@@ -2603,7 +2629,7 @@
       await loadAppointments();
 
       // Pre-fill compose area and show thread
-      document.getElementById('del-compose-to').value      = d.client_email || '';
+      document.getElementById('del-compose-to').value      = clientEmail || d.client_email || '';
       document.getElementById('del-compose-subject').value = d.subject ? `Re: ${d.subject}` : '';
       document.getElementById('del-compose-body').value    = '';
       _deleteApptThreadId = d.thread_id || null;
@@ -2613,7 +2639,7 @@
       if (!msgs.length) {
         msgsEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No thread history available.</div>';
       } else {
-        msgsEl.innerHTML = msgs.map((m, i) => `
+        msgsEl.innerHTML = msgs.map((m) => `
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
             <div style="font-size:11px;color:var(--accent2);margin-bottom:4px">${m.from || '—'} · ${m.date || ''}</div>
             <div style="font-size:12px;white-space:pre-wrap;color:var(--text);max-height:120px;overflow-y:auto">${m.body || '(empty)'}</div>
@@ -2621,7 +2647,18 @@
       }
       openModal('delete-appt-modal');
     } catch(e) {
-      alert('Error: ' + e.message);
+      alert('Error opening compose: ' + e.message);
+    }
+  }
+
+  async function _executeDeleteAppointment(id, clientName) {
+    try {
+      await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+      document.getElementById(`appt-card-${id}`)?.remove();
+      await loadAppointments();
+      showToast(`🗑 Appointment deleted — remember to reply to ${clientName} if needed.`);
+    } catch(e) {
+      alert('Error deleting appointment: ' + e.message);
     }
   }
 

@@ -336,7 +336,7 @@ Rules:
     if signature:
         body = body + "\n\n" + signature
 
-    subject = f"Re: {(appt.get('context_snippet') or 'Our Appointment')[:60]}"
+    subject = f"[APPOINTMENT] Re: {(appt.get('context_snippet') or 'Our Appointment')[:50]}"
     now     = _dt.datetime.utcnow().isoformat() + "Z"
 
     conn = get_conn()
