@@ -373,30 +373,33 @@
     .modal {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px;
-      width: 480px;
-      max-width: 95vw;
-      max-height: 90vh;
+      border-radius: 14px;
+      padding: 36px;
+      width: 560px;
+      max-width: 96vw;
+      max-height: 92vh;
       overflow-y: auto;
+      font-size: 15px;
     }
-    .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
-    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+    .modal h3 { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+    .modal p, .modal div, .modal span, .modal td, .modal li { font-size: 14px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 28px; }
+    .modal-footer button, .modal-footer .btn { font-size: 14px; padding: 10px 20px; }
 
     /* ── Form ── */
-    .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px; }
     .form-group input, .form-group select, .form-group textarea {
-      width: 100%; padding: 9px 12px;
+      width: 100%; padding: 11px 14px;
       background: var(--bg); border: 1px solid var(--border);
-      border-radius: 7px; color: var(--text); font-size: 13px;
+      border-radius: 8px; color: var(--text); font-size: 14px;
       outline: none; transition: border-color 0.15s;
     }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
       border-color: var(--accent);
     }
-    .form-group textarea { resize: vertical; min-height: 80px; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-group textarea { resize: vertical; min-height: 90px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
     /* ── Toggle switch ── */
     .toggle-track {
@@ -485,7 +488,7 @@
 
 <!-- ── Draft Modal ── -->
 <div class="modal-overlay" id="draft-modal">
-  <div class="modal" style="width:600px">
+  <div class="modal" style="width:720px">
     <h3 id="view-modal-title">📧 Email</h3>
     <div id="draft-modal-content"></div>
     <div class="modal-footer">
@@ -497,7 +500,7 @@
 
 <!-- ── Thread View Modal ── -->
 <div class="modal-overlay" id="thread-modal">
-  <div class="modal" style="width:660px;max-height:85vh;display:flex;flex-direction:column">
+  <div class="modal" style="width:760px;max-height:88vh;display:flex;flex-direction:column">
     <h3>💬 Email Thread</h3>
     <div id="thread-modal-meta" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
     <div id="thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px"></div>
@@ -512,7 +515,7 @@
 
 <!-- ── Agent Profile Modal ── -->
 <div class="modal-overlay" id="profile-modal">
-  <div class="modal" style="width:520px">
+  <div class="modal" style="width:640px">
     <h3>👤 Agent Profile</h3>
     <div class="form-row">
       <div class="form-group">
@@ -577,7 +580,7 @@
 
 <!-- ── Edit Client Modal ── -->
 <div class="modal-overlay" id="client-edit-modal">
-  <div class="modal" style="width:480px">
+  <div class="modal" style="width:600px">
     <h3 id="client-edit-title">👤 Edit Client</h3>
     <input type="hidden" id="client-edit-id" value="" />
     <div class="form-row">
@@ -622,7 +625,7 @@
 
 <!-- ── Edit Property Modal ── -->
 <div class="modal-overlay" id="property-edit-modal">
-  <div class="modal" style="width:580px;max-height:90vh;overflow-y:auto">
+  <div class="modal" style="width:700px;max-height:92vh;overflow-y:auto">
     <h3 id="property-edit-title">🏢 Add Property</h3>
     <input type="hidden" id="prop-edit-id" value="" />
     <div class="form-group">
@@ -695,7 +698,7 @@
 
 <!-- ── View Notes Modal ── -->
 <div class="modal-overlay" id="notes-modal">
-  <div class="modal" style="width:460px">
+  <div class="modal" style="width:580px">
     <h3 id="notes-modal-title">📝 Notes</h3>
     <div id="notes-modal-body" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:360px;overflow-y:auto;color:var(--text)"></div>
     <div class="modal-footer">
@@ -706,7 +709,7 @@
 
 <!-- ── Theme Picker Modal ── -->
 <div class="modal-overlay" id="theme-modal">
-  <div class="modal" style="width:360px">
+  <div class="modal" style="width:480px">
     <h3>🎨 Theme Color</h3>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Choose an accent color for the interface.</p>
     <p style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Soft</p>
@@ -721,7 +724,7 @@
 
 <!-- ── New / Edit Draft Modal ── -->
 <div class="modal-overlay" id="draft-edit-modal">
-  <div class="modal" style="width:600px">
+  <div class="modal" style="width:720px">
     <h3 id="draft-edit-title">✍ New Draft</h3>
     <input type="hidden" id="draft-edit-id" value="" />
     <div class="form-group">
@@ -769,7 +772,7 @@
 
 <!-- ── Client Picker Modal ── -->
 <div class="modal-overlay" id="client-picker-modal">
-  <div class="modal" style="width:400px">
+  <div class="modal" style="width:520px">
     <h3>👥 Pick a Client</h3>
     <div id="client-picker-list" style="max-height:300px;overflow-y:auto"></div>
     <div class="modal-footer">
@@ -780,7 +783,7 @@
 
 <!-- ── Send All Confirm Modal ── -->
 <div class="modal-overlay" id="send-all-modal">
-  <div class="modal" style="width:480px;border:1px solid var(--red)">
+  <div class="modal" style="width:600px;border:1px solid var(--red)">
     <div style="text-align:center;margin-bottom:20px">
       <div style="font-size:40px;margin-bottom:12px">⚠️</div>
       <h3 style="font-size:18px;color:var(--red)">SEND ALL EMAILS?</h3>
