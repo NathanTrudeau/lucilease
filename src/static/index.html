@@ -459,11 +459,9 @@
 
 <!-- ── Draft Modal ── -->
 <div class="modal-overlay" id="draft-modal">
-  <div class="modal" style="width:560px">
-    <h3>✍ Draft Reply</h3>
-    <div id="draft-modal-content">
-      <p style="color:var(--muted);text-align:center;padding:20px">Generating with Claude...</p>
-    </div>
+  <div class="modal" style="width:600px">
+    <h3 id="view-modal-title">📧 Email</h3>
+    <div id="draft-modal-content"></div>
     <div class="modal-footer">
       <button class="secondary" onclick="closeModal('draft-modal')">Close</button>
       <a id="draft-gmail-link" class="btn" href="#" target="_blank" style="display:none">Open in Gmail →</a>
@@ -818,7 +816,7 @@
       <div class="header-actions">
         <button class="secondary" onclick="manualPoll()" id="poll-btn">↻ Check now</button>
         <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Queue AI drafts for all inbox leads in the background">✍ Draft All</button>
-        <button class="secondary" id="archive-selected-btn" onclick="archiveSelected()" style="display:none">📦 Archive (<span id="archive-selected-count">0</span>)</button>
+        <button class="secondary" id="inbox-bulk-btn" onclick="archiveSelected()" style="display:none">📦 Archive (<span id="inbox-bulk-count">0</span>)</button>
       </div>
     </header>
     <div class="content">
@@ -862,6 +860,9 @@
         <h2>Archive</h2>
         <p>Emails archived from inbox</p>
       </div>
+      <div class="header-actions">
+        <button class="secondary" id="archive-bulk-btn" onclick="restoreSelectedArchive()" style="display:none">↩ Restore (<span id="archive-bulk-count">0</span>)</button>
+      </div>
     </header>
     <div class="content">
       <div class="panel">
@@ -882,7 +883,8 @@
       <div><h2>Drafts</h2><p>Review, edit, and send your outgoing emails</p></div>
       <div class="header-actions">
         <button onclick="openNewDraftModal()">+ New Draft</button>
-        <button class="danger" id="send-all-btn" onclick="confirmSendAll()" style="font-weight:700;letter-spacing:0.3px">📤 SEND ALL EMAILS</button>
+        <button class="secondary" id="drafts-bulk-btn" onclick="deleteSelectedDrafts()" style="display:none">🗑 Delete (<span id="drafts-bulk-count">0</span>)</button>
+        <button class="danger" id="send-all-btn" onclick="confirmSendAll()" style="font-weight:700;letter-spacing:0.3px">📤 SEND ALL</button>
       </div>
     </header>
     <div class="content">
@@ -1145,6 +1147,16 @@
   }
 
   // ── Leads ─────────────────────────────────────────────────────────────────
+  let _leadsCache = [];
+
+  async function archiveLeadRow(id) {
+    await fetch(`/api/leads/${id}/archive`, { method: 'POST' });
+    document.getElementById(`lead-row-${id}`)?.remove();
+    clearBulk('leads');
+    await refreshStats();
+    await loadArchive();
+  }
+
   async function loadLeads() {
     const container = document.getElementById('leads-container');
     try {
@@ -1155,6 +1167,7 @@
       const leads = await leadsRes.json();
       const existingEmails = new Set((await clientsRes.json()).map(c => (c.email || '').toLowerCase()));
 
+      _leadsCache = leads;
       document.getElementById('leads-count').textContent =
         leads.length ? `${leads.length} new` : '';
 
@@ -1165,31 +1178,31 @@
         </div>`;
         return;
       }
-
       container.innerHTML = `
         <table>
           <thead><tr>
-            <th style="width:32px"><input type="checkbox" id="select-all-leads" onchange="toggleSelectAllLeads(this)" title="Select all"></th>
+            <th style="width:32px"><input type="checkbox" id="select-all-leads" onchange="toggleBulk('leads', this)" title="Select all"></th>
             <th>Name</th><th>Email</th><th>Phone</th>
             <th>Subject</th><th>Budget</th><th>Received</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${leads.map(l => `
               <tr id="lead-row-${l.id}">
-                <td><input type="checkbox" class="lead-checkbox" data-id="${l.id}" onchange="updateArchiveBtn()"></td>
+                <td><input type="checkbox" class="lead-checkbox" data-id="${l.id}" onchange="updateBulkBtn('leads')"></td>
                 <td>${l.name || '—'}</td>
                 <td><a href="mailto:${l.from_email}" style="color:var(--accent2)">${l.from_email}</a></td>
                 <td>${l.phone || '—'}</td>
-                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
                 <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
                 <td>
                   <div class="actions">
+                    <button class="secondary" onclick="viewEmailModal('inbox', ${l.id})">👁 View</button>
                     <button onclick="generateDraft(${l.id}, this)">✍ Draft</button>
                     ${existingEmails.has(l.from_email.toLowerCase())
                       ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
                       : `<button class="success" onclick="addClient(${l.id})">+ Client</button>`}
-                    <button class="secondary" onclick="handleLead(${l.id})" title="Mark as handled — removes from inbox">✓ Dismiss</button>
+                    <button class="secondary" onclick="archiveLeadRow(${l.id})">📦 Archive</button>
                   </div>
                 </td>
               </tr>
@@ -1257,28 +1270,44 @@
     btn.disabled = false;
   }
 
-  // ── Checkbox multi-select (archive) ──────────────────────────────────────
-  function updateArchiveBtn() {
-    const checked = document.querySelectorAll('.lead-checkbox:checked');
-    const btn = document.getElementById('archive-selected-btn');
-    const countEl = document.getElementById('archive-selected-count');
-    if (checked.length > 0) {
-      countEl.textContent = checked.length;
-      btn.style.display = '';
-    } else {
-      btn.style.display = 'none';
-    }
+  // ── Unified multi-select bulk system ─────────────────────────────────────
+  // tab: 'leads' | 'drafts' | 'archive'
+  const BULK_CFG = {
+    leads:   { cls: 'lead-checkbox',    btn: 'inbox-bulk-btn',   count: 'inbox-bulk-count',   master: 'select-all-leads' },
+    drafts:  { cls: 'draft-checkbox',   btn: 'drafts-bulk-btn',  count: 'drafts-bulk-count',  master: 'select-all-drafts' },
+    archive: { cls: 'archive-checkbox', btn: 'archive-bulk-btn', count: 'archive-bulk-count', master: 'select-all-archive' },
+  };
+
+  function updateBulkBtn(tab) {
+    const cfg = BULK_CFG[tab];
+    const n = document.querySelectorAll(`.${cfg.cls}:checked`).length;
+    const btn = document.getElementById(cfg.btn);
+    document.getElementById(cfg.count).textContent = n;
+    btn.style.display = n > 0 ? '' : 'none';
   }
 
-  function toggleSelectAllLeads(master) {
-    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = master.checked);
-    updateArchiveBtn();
+  function toggleBulk(tab, master) {
+    const cfg = BULK_CFG[tab];
+    document.querySelectorAll(`.${cfg.cls}`).forEach(cb => cb.checked = master.checked);
+    updateBulkBtn(tab);
+  }
+
+  function getCheckedIds(tab) {
+    return [...document.querySelectorAll(`.${BULK_CFG[tab].cls}:checked`)]
+      .map(cb => parseInt(cb.dataset.id));
+  }
+
+  function clearBulk(tab) {
+    const cfg = BULK_CFG[tab];
+    document.querySelectorAll(`.${cfg.cls}`).forEach(cb => cb.checked = false);
+    const master = document.getElementById(cfg.master);
+    if (master) master.checked = false;
+    document.getElementById(cfg.btn).style.display = 'none';
   }
 
   async function archiveSelected() {
-    const checked = [...document.querySelectorAll('.lead-checkbox:checked')];
-    if (!checked.length) return;
-    const ids = checked.map(cb => parseInt(cb.dataset.id));
+    const ids = getCheckedIds('leads');
+    if (!ids.length) return;
     const r = await fetch('/api/leads/archive-bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1286,13 +1315,29 @@
     });
     if ((await r.json()).ok) {
       ids.forEach(id => document.getElementById(`lead-row-${id}`)?.remove());
-      document.getElementById('archive-selected-btn').style.display = 'none';
-      document.getElementById('archive-selected-count').textContent = '0';
-      const master = document.getElementById('select-all-leads');
-      if (master) master.checked = false;
+      clearBulk('leads');
       await refreshStats();
       await loadArchive();
     }
+  }
+
+  async function deleteSelectedDrafts() {
+    const ids = getCheckedIds('drafts');
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} draft${ids.length !== 1 ? 's' : ''}?`)) return;
+    await Promise.all(ids.map(id => fetch(`/api/drafts/${id}`, { method: 'DELETE' })));
+    clearBulk('drafts');
+    await loadDrafts();
+  }
+
+  async function restoreSelectedArchive() {
+    const ids = getCheckedIds('archive');
+    if (!ids.length) return;
+    await Promise.all(ids.map(id => fetch(`/api/leads/${id}/unarchive`, { method: 'POST' })));
+    clearBulk('archive');
+    await loadArchive();
+    await loadLeads();
+    await refreshStats();
   }
 
   // ── Draft All ─────────────────────────────────────────────────────────────
@@ -1345,19 +1390,21 @@
       container.innerHTML = `
         <table>
           <thead><tr>
+            <th style="width:32px"><input type="checkbox" id="select-all-archive" onchange="toggleBulk('archive', this)" title="Select all"></th>
             <th>Name</th><th>Email</th><th>Subject</th><th>Received</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${leads.map(l => `
               <tr id="archive-row-${l.id}">
+                <td><input type="checkbox" class="archive-checkbox" data-id="${l.id}" onchange="updateBulkBtn('archive')"></td>
                 <td>${l.name || '—'}</td>
                 <td style="color:var(--accent2)">${l.from_email}</td>
-                <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
+                <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
                 <td>
                   <div class="actions">
-                    <button class="secondary" onclick="unarchiveLead(${l.id})">↩ Move to Inbox</button>
-                    <button class="secondary" onclick="viewArchivedLead(${l.id})">👁 View</button>
+                    <button class="secondary" onclick="viewEmailModal('archive', ${l.id})">👁 View</button>
+                    <button class="secondary" onclick="unarchiveLead(${l.id})">↩ Restore</button>
                   </div>
                 </td>
               </tr>
@@ -1379,20 +1426,41 @@
     }
   }
 
-  function viewArchivedLead(id) {
-    const lead = _archiveCache.find(l => l.id === id) || {};
+  // ── Unified email view modal ───────────────────────────────────────────────
+  // tab: 'inbox' | 'archive' | 'sent' | 'drafts'
+  function viewEmailModal(tab, id) {
+    let item, fromOrTo, label, titleIcon;
+    if (tab === 'inbox') {
+      item = _leadsCache.find(l => l.id === id) || {};
+      fromOrTo = `${item.name || '—'} <${item.from_email || ''}>`;
+      label = 'From'; titleIcon = '📬 Received Email';
+    } else if (tab === 'archive') {
+      item = _archiveCache.find(l => l.id === id) || {};
+      fromOrTo = `${item.name || '—'} <${item.from_email || ''}>`;
+      label = 'From'; titleIcon = '📦 Archived Email';
+    } else if (tab === 'sent') {
+      item = _sentCache.find(d => d.id === id) || {};
+      fromOrTo = item.to_email || '—';
+      label = 'To'; titleIcon = '📤 Sent Email';
+    } else if (tab === 'drafts') {
+      item = _draftsCache.find(d => d.id === id) || {};
+      fromOrTo = item.to_email || '—';
+      label = 'To'; titleIcon = '✍ Draft';
+    }
+
+    document.getElementById('view-modal-title').textContent = titleIcon;
     document.getElementById('draft-modal-content').innerHTML = `
       <div style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">From</div>
-        <div>${lead.name || '—'} &lt;${lead.from_email}&gt;</div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">${label}</div>
+        <div style="font-size:13px">${fromOrTo}</div>
       </div>
-      <div style="margin-bottom:10px">
+      <div style="margin-bottom:12px">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Subject</div>
-        <div style="font-weight:500">${lead.subject || '—'}</div>
+        <div style="font-weight:500;font-size:13px">${item.subject || '—'}</div>
       </div>
       <div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Body</div>
-        <div class="draft-preview" style="white-space:pre-wrap">${lead.body || '(no body)'}</div>
+        <div class="draft-preview" style="white-space:pre-wrap;max-height:360px;overflow-y:auto">${item.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
       </div>`;
     document.getElementById('draft-gmail-link').style.display = 'none';
     openModal('draft-modal');
@@ -1745,11 +1813,13 @@
       container.innerHTML = `
         <table>
           <thead><tr>
+            <th style="width:32px"><input type="checkbox" id="select-all-drafts" onchange="toggleBulk('drafts', this)" title="Select all"></th>
             <th>To</th><th>Subject</th><th>Status</th><th>Created</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${drafts.map(d => `
               <tr id="draft-row-${d.id}">
+                <td><input type="checkbox" class="draft-checkbox" data-id="${d.id}" onchange="updateBulkBtn('drafts')"></td>
                 <td style="color:var(--accent2)">${d.to_email || '—'}</td>
                 <td>${d.subject || '—'}</td>
                 <td>
@@ -1759,6 +1829,7 @@
                 <td style="color:var(--muted);font-size:12px">${formatDate(d.created_at)}</td>
                 <td>
                   <div class="actions">
+                    <button class="secondary" onclick="viewEmailModal('drafts', ${d.id})">👁 View</button>
                     <button class="secondary" onclick="editDraft(${d.id})">Edit</button>
                     <button class="secondary" onclick="duplicateDraft(${d.id})" title="Duplicate this draft">⧉ Dupe</button>
                     ${d.status === 'local' || d.status === 'failed'
@@ -1767,7 +1838,7 @@
                     ${d.status !== 'duplicate'
                       ? `<button class="danger" id="send-btn-${d.id}" onclick="sendSingleDraft(${d.id}, this)" style="font-weight:700">📤 SEND</button>`
                       : ''}
-                    <button class="danger" onclick="deleteDraft(${d.id})">Delete</button>
+                    <button class="danger" onclick="deleteDraft(${d.id})">🗑</button>
                   </div>
                 </td>
               </tr>`).join('')}
@@ -1888,12 +1959,14 @@
   }
 
   // ── Sent tab ──────────────────────────────────────────────────────────────
+  let _sentCache = [];
   async function loadSent() {
     const container = document.getElementById('sent-container');
     if (!container) return;
     try {
       const r = await fetch('/api/drafts/sent');
-      const sent = await r.json();
+      _sentCache = await r.json();
+      const sent = _sentCache;
 
       const badge = document.getElementById('sent-badge');
       badge.textContent = sent.length;
@@ -1909,14 +1982,19 @@
       container.innerHTML = `
         <table>
           <thead><tr>
-            <th>To</th><th>Subject</th><th>Sent</th>
+            <th>To</th><th>Subject</th><th>Sent</th><th>Actions</th>
           </tr></thead>
           <tbody>
             ${sent.map(d => `
-              <tr>
+              <tr id="sent-row-${d.id}">
                 <td style="color:var(--accent2)">${d.to_email || '—'}</td>
                 <td>${d.subject || '—'}</td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(d.updated_at)}</td>
+                <td>
+                  <div class="actions">
+                    <button class="secondary" onclick="viewEmailModal('sent', ${d.id})">👁 View</button>
+                  </div>
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>`;
