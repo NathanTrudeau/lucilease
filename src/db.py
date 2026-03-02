@@ -45,7 +45,8 @@ def init_db():
     # Migrate leads table
     lead_cols = {row["name"] for row in cur.execute("PRAGMA table_info(leads)").fetchall()}
     for col, sql in {
-        "body_full": "ALTER TABLE leads ADD COLUMN body_full TEXT",
+        "body_full":       "ALTER TABLE leads ADD COLUMN body_full TEXT",
+        "gmail_thread_id": "ALTER TABLE leads ADD COLUMN gmail_thread_id TEXT",
     }.items():
         if col not in lead_cols:
             try: cur.execute(sql); print(f"[db] Migrated leads: added '{col}'")
@@ -125,6 +126,19 @@ def init_db():
                 print(f"[db] Migrated: added column '{col}' to drafts.")
             except Exception as e:
                 print(f"[db] Migration warning ({col}): {e}")
+
+    # Open house slots — per-property recurring time windows
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS open_house_slots (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+            day_of_week TEXT    NOT NULL,  -- 'monday','tuesday',...,'sunday'
+            start_time  TEXT    NOT NULL,  -- 'HH:MM' 24h
+            end_time    TEXT    NOT NULL,  -- 'HH:MM' 24h
+            label       TEXT,             -- optional note e.g. "Broker preview"
+            created_at  TEXT    NOT NULL
+        )
+    """)
 
     conn.commit()
     conn.close()

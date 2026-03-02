@@ -495,6 +495,18 @@
   </div>
 </div>
 
+<!-- ── Thread View Modal ── -->
+<div class="modal-overlay" id="thread-modal">
+  <div class="modal" style="width:660px;max-height:85vh;display:flex;flex-direction:column">
+    <h3>💬 Email Thread</h3>
+    <div id="thread-modal-meta" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+    <div id="thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px"></div>
+    <div class="modal-footer" style="margin-top:12px">
+      <button class="secondary" onclick="closeModal('thread-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Add Property Modal ── -->
 <!-- property-modal replaced by property-edit-modal -->
 
@@ -610,7 +622,7 @@
 
 <!-- ── Edit Property Modal ── -->
 <div class="modal-overlay" id="property-edit-modal">
-  <div class="modal" style="width:520px">
+  <div class="modal" style="width:580px;max-height:90vh;overflow-y:auto">
     <h3 id="property-edit-title">🏢 Add Property</h3>
     <input type="hidden" id="prop-edit-id" value="" />
     <div class="form-group">
@@ -659,9 +671,24 @@
       <label>Notes</label>
       <textarea id="prop-edit-notes" placeholder="Pet-friendly, parking included..."></textarea>
     </div>
+
+    <!-- ── Open House Slots ── -->
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)" id="open-house-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <div style="font-size:13px;font-weight:600">🏠 Open House Times</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Recurring weekly windows for this property</div>
+        </div>
+        <button class="secondary" onclick="addOpenHouseRow()" style="font-size:12px;padding:5px 12px">+ Add Window</button>
+      </div>
+      <div id="open-house-slots-list" style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;color:var(--muted);text-align:center;padding:8px">No open house times set</div>
+      </div>
+    </div>
+
     <div class="modal-footer">
       <button class="secondary" onclick="closeModal('property-edit-modal')">Cancel</button>
-      <button onclick="saveProperty()">Save</button>
+      <button onclick="saveProperty()">Save Property</button>
     </div>
   </div>
 </div>
@@ -1039,7 +1066,36 @@
             <div class="setting-label">Google Calendar</div>
             <div class="setting-desc">Connect to schedule appointments from emails</div>
           </div>
-          <button class="secondary" disabled>Phase 4</button>
+          <button class="secondary" disabled>Phase 4b</button>
+        </div>
+      </div>
+
+      <div class="panel settings-section">
+        <div class="panel-header">Scheduling</div>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+          <div>
+            <div class="setting-label">Timezone</div>
+            <div class="setting-desc">Used for calendar events and appointment suggestions</div>
+          </div>
+          <select id="setting-timezone" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:7px 12px;font-size:13px;width:100%;max-width:320px">
+            <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+            <option value="America/Denver">Mountain Time (America/Denver)</option>
+            <option value="America/Chicago">Central Time (America/Chicago)</option>
+            <option value="America/New_York">Eastern Time (America/New_York)</option>
+            <option value="America/Phoenix">Arizona (America/Phoenix)</option>
+            <option value="America/Anchorage">Alaska (America/Anchorage)</option>
+            <option value="Pacific/Honolulu">Hawaii (Pacific/Honolulu)</option>
+          </select>
+        </div>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:12px;margin-top:4px">
+          <div>
+            <div class="setting-label">Availability Windows</div>
+            <div class="setting-desc">Days and times you're available for appointments</div>
+          </div>
+          <div id="avail-windows-grid" style="width:100%;display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button onclick="saveAvailability()">Save Schedule</button>
         </div>
       </div>
 
@@ -1241,6 +1297,7 @@
                 <td>
                   <div class="actions">
                     <button class="secondary" onclick="viewEmailModal('inbox', ${l.id})">👁 View</button>
+                    ${l.gmail_thread_id ? `<button class="secondary" onclick="viewThread(${l.id}, '${l.subject || ''}')">💬 Thread</button>` : ''}
                     <button onclick="generateDraft(${l.id}, this)">✍ Draft</button>
                     ${existingEmails.has(l.from_email.toLowerCase())
                       ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
@@ -1448,6 +1505,7 @@
                 <td>
                   <div class="actions">
                     <button class="secondary" onclick="viewEmailModal('archive', ${l.id})">👁 View</button>
+                    ${l.gmail_thread_id ? `<button class="secondary" onclick="viewThread(${l.id}, '${(l.subject||'').replace(/'/g,"\\'")}')">💬 Thread</button>` : ''}
                     <button class="secondary" onclick="unarchiveLead(${l.id})">↩ Restore</button>
                   </div>
                 </td>
@@ -1731,6 +1789,9 @@
     document.getElementById('prop-edit-bathrooms').value       = p.bathrooms || '';
     document.getElementById('prop-edit-notes').value           = p.notes    || '';
     document.getElementById('property-edit-title').textContent = p.id ? '🏢 Edit Property' : '🏢 Add Property';
+    // Open house section only visible when editing existing property
+    document.getElementById('open-house-section').style.display = p.id ? '' : 'none';
+    loadOpenHouseSlots(p.id || null);
     openModal('property-edit-modal');
   }
 
@@ -2286,12 +2347,191 @@
   loadSent();     // preload sent badge
   setPollDisplay();
   buildSwatches();
+  loadAvailabilitySettings();
   setInterval(refreshAll, 30000);
 
   // Pull version from API
   fetch('/health').then(r => r.json()).then(d => {
     if (d.version) document.getElementById('app-version').textContent = 'v' + d.version;
   }).catch(() => {});
+
+  // ── Thread view ───────────────────────────────────────────────────────────
+  async function viewThread(leadId, subject) {
+    const metaEl = document.getElementById('thread-modal-meta');
+    const msgsEl = document.getElementById('thread-messages');
+    metaEl.textContent = subject ? `Re: ${subject}` : 'Loading…';
+    msgsEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">Loading thread…</div>';
+    openModal('thread-modal');
+
+    try {
+      const r = await fetch(`/api/leads/${leadId}/thread`);
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error);
+
+      metaEl.textContent = `${d.messages.length} message${d.messages.length !== 1 ? 's' : ''} · ${subject || ''}`;
+      msgsEl.innerHTML = d.messages.map((m, i) => `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--accent2)">${m.from || '—'}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">${m.date || ''}</div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);white-space:nowrap">#${i + 1}</div>
+          </div>
+          <div style="font-size:13px;white-space:pre-wrap;line-height:1.6;color:var(--text);max-height:200px;overflow-y:auto">${m.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
+        </div>`).join('');
+    } catch(e) {
+      msgsEl.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px">Failed to load thread: ${e.message}</div>`;
+    }
+  }
+
+  // ── Open house slots ──────────────────────────────────────────────────────
+  const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  const DAY_LABELS = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' };
+
+  let _ohSlots = []; // current slots for open property modal
+
+  async function loadOpenHouseSlots(propId) {
+    const container = document.getElementById('open-house-slots-list');
+    if (!propId) {
+      _ohSlots = [];
+      renderOhSlots(container);
+      return;
+    }
+    const r = await fetch(`/api/properties/${propId}/open-house-slots`);
+    _ohSlots = await r.json();
+    renderOhSlots(container);
+  }
+
+  function renderOhSlots(container) {
+    if (!_ohSlots.length) {
+      container.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:8px">No open house times set</div>';
+      return;
+    }
+    container.innerHTML = _ohSlots.map(s => `
+      <div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px" id="ohs-row-${s.id}">
+        <span style="font-size:12px;font-weight:600;color:var(--accent2);width:32px">${DAY_LABELS[s.day_of_week] || s.day_of_week}</span>
+        <span style="font-size:13px;flex:1">${s.start_time} – ${s.end_time}</span>
+        ${s.label ? `<span style="font-size:11px;color:var(--muted)">${s.label}</span>` : ''}
+        <button class="danger" onclick="deleteOhSlot(${s.id})" style="padding:3px 8px;font-size:11px">✕</button>
+      </div>`).join('');
+  }
+
+  function addOpenHouseRow() {
+    const container = document.getElementById('open-house-slots-list');
+    const tempId = 'oh-new-' + Date.now();
+    const row = document.createElement('div');
+    row.id = tempId;
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--accent);border-radius:8px;padding:8px 12px';
+    row.innerHTML = `
+      <select id="${tempId}-day" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px">
+        ${DAYS.map(d => `<option value="${d}">${DAY_LABELS[d]}</option>`).join('')}
+      </select>
+      <input type="time" id="${tempId}-start" value="10:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px">
+      <span style="color:var(--muted);font-size:12px">–</span>
+      <input type="time" id="${tempId}-end" value="13:00" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px">
+      <input type="text" id="${tempId}-label" placeholder="Label (optional)" style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;flex:1">
+      <button onclick="confirmAddOhSlot('${tempId}')" style="padding:4px 10px;font-size:12px">✓</button>
+      <button class="secondary" onclick="document.getElementById('${tempId}').remove()" style="padding:4px 8px;font-size:12px">✕</button>`;
+    // Remove "no slots" placeholder if present
+    if (container.querySelector('[style*="text-align:center"]')) container.innerHTML = '';
+    container.appendChild(row);
+  }
+
+  async function confirmAddOhSlot(tempId) {
+    const propId = document.getElementById('prop-edit-id').value;
+    if (!propId) { alert('Save the property first before adding open house times.'); return; }
+    const day   = document.getElementById(`${tempId}-day`).value;
+    const start = document.getElementById(`${tempId}-start`).value;
+    const end   = document.getElementById(`${tempId}-end`).value;
+    const label = document.getElementById(`${tempId}-label`).value.trim() || null;
+    if (!start || !end) { alert('Start and end times are required.'); return; }
+
+    const r = await fetch(`/api/properties/${propId}/open-house-slots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ day_of_week: day, start_time: start, end_time: end, label }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById(tempId)?.remove();
+      await loadOpenHouseSlots(propId);
+    }
+  }
+
+  async function deleteOhSlot(slotId) {
+    await fetch(`/api/open-house-slots/${slotId}`, { method: 'DELETE' });
+    _ohSlots = _ohSlots.filter(s => s.id !== slotId);
+    renderOhSlots(document.getElementById('open-house-slots-list'));
+  }
+
+  // ── Availability windows settings ─────────────────────────────────────────
+  const DEFAULT_WINDOWS = [
+    { day: 'monday',    enabled: true,  start: '09:00', end: '18:00' },
+    { day: 'tuesday',   enabled: true,  start: '09:00', end: '18:00' },
+    { day: 'wednesday', enabled: true,  start: '09:00', end: '18:00' },
+    { day: 'thursday',  enabled: true,  start: '09:00', end: '18:00' },
+    { day: 'friday',    enabled: true,  start: '09:00', end: '18:00' },
+    { day: 'saturday',  enabled: false, start: '10:00', end: '15:00' },
+    { day: 'sunday',    enabled: false, start: '10:00', end: '15:00' },
+  ];
+
+  function renderAvailGrid(windows) {
+    const grid = document.getElementById('avail-windows-grid');
+    if (!grid) return;
+    grid.innerHTML = windows.map(w => `
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;width:110px">
+          <input type="checkbox" id="avail-${w.day}" ${w.enabled ? 'checked' : ''} onchange="toggleAvailDay('${w.day}')">
+          <span style="font-size:13px;font-weight:500;text-transform:capitalize">${w.day}</span>
+        </label>
+        <input type="time" id="avail-${w.day}-start" value="${w.start}"
+          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
+        <span style="color:var(--muted);font-size:12px">–</span>
+        <input type="time" id="avail-${w.day}-end" value="${w.end}"
+          style="background:var(--border);color:var(--text);border:none;border-radius:6px;padding:5px 8px;font-size:12px;width:90px;${w.enabled ? '' : 'opacity:0.4;pointer-events:none'}">
+      </div>`).join('');
+  }
+
+  function toggleAvailDay(day) {
+    const enabled = document.getElementById(`avail-${day}`).checked;
+    ['start','end'].forEach(t => {
+      const el = document.getElementById(`avail-${day}-${t}`);
+      if (el) { el.style.opacity = enabled ? '1' : '0.4'; el.style.pointerEvents = enabled ? '' : 'none'; }
+    });
+  }
+
+  async function loadAvailabilitySettings() {
+    try {
+      const r = await fetch('/api/config/availability');
+      const d = await r.json();
+      const tzEl = document.getElementById('setting-timezone');
+      if (tzEl && d.timezone) tzEl.value = d.timezone;
+      const windows = d.availability_windows ? JSON.parse(d.availability_windows) : DEFAULT_WINDOWS;
+      renderAvailGrid(windows);
+    } catch(e) {
+      renderAvailGrid(DEFAULT_WINDOWS);
+    }
+  }
+
+  async function saveAvailability() {
+    const tz = document.getElementById('setting-timezone')?.value;
+    const windows = DAYS.map(day => ({
+      day,
+      enabled: document.getElementById(`avail-${day}`)?.checked || false,
+      start:   document.getElementById(`avail-${day}-start`)?.value || '09:00',
+      end:     document.getElementById(`avail-${day}-end`)?.value   || '18:00',
+    }));
+    const r = await fetch('/api/config/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timezone: tz, availability_windows: JSON.stringify(windows) }),
+    });
+    const d = await r.json();
+    if (d.ok) showToast('✓ Schedule saved');
+    else showToast('Failed to save schedule', true);
+  }
+
 </script>
 </body>
 </html>

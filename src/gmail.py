@@ -191,6 +191,7 @@ def poll_inbox(label_ids: list[str] = None) -> int:
                 print(f"[gmail] Skipped (not housing-related): {subject!r}")
                 continue
 
+            thread_id = msg.get("threadId")
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
 
             # Dedup by fingerprint
@@ -201,18 +202,18 @@ def poll_inbox(label_ids: list[str] = None) -> int:
                 print(f"[gmail] Duplicate lead skipped: {lead.from_email}")
                 continue
 
-            # Insert — store full body in body_full, excerpt in body_excerpt
+            # Insert — store full body + thread id
             conn.execute("""
                 INSERT INTO leads
                     (fingerprint, source, from_email, name, phone, subject,
                      body_excerpt, body_full, budget_monthly_usd, status,
-                     first_seen_at, gmail_msg_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                     first_seen_at, gmail_msg_id, gmail_thread_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 lead.fingerprint, lead.source, lead.from_email, lead.name,
                 lead.phone, lead.subject, lead.body_excerpt, lead.body_full,
                 lead.budget_monthly_usd, "new", lead.first_seen_at,
-                lead.gmail_msg_id,
+                lead.gmail_msg_id, thread_id,
             ))
             conn.commit()
             new_count += 1
@@ -263,6 +264,32 @@ def _extract_body(payload: dict) -> str:
         return plain_result or html_result
 
     return ""
+
+
+def get_thread_messages(creds, thread_id: str) -> list[dict]:
+    """
+    Fetch all messages in a Gmail thread.
+    Returns list of dicts: {from, date, subject, body} sorted oldest-first.
+    """
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    thread = service.users().threads().get(
+        userId="me", id=thread_id, format="full"
+    ).execute()
+
+    result = []
+    for msg in thread.get("messages", []):
+        headers_raw = msg["payload"].get("headers", [])
+        headers = {h["name"]: h["value"] for h in headers_raw}
+        body = _extract_body(msg["payload"])
+        result.append({
+            "msg_id":  msg["id"],
+            "from":    headers.get("From", ""),
+            "to":      headers.get("To", ""),
+            "date":    headers.get("Date", ""),
+            "subject": headers.get("Subject", ""),
+            "body":    body,
+        })
+    return result  # Gmail returns oldest-first by default
 
 
 def archive_gmail_message(creds, msg_id: str) -> bool:

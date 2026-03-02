@@ -48,7 +48,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 
 @app.get("/health")
 async def health():
@@ -667,6 +667,101 @@ async def update_property(prop_id: int, prop: PropertyIn):
 async def delete_property(prop_id: int):
     conn = get_conn()
     conn.execute("DELETE FROM properties WHERE id=?", (prop_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ── Open house slots ──────────────────────────────────────────────────────────
+
+class OpenHouseSlot(BaseModel):
+    day_of_week: str
+    start_time:  str
+    end_time:    str
+    label:       Optional[str] = None
+
+@app.get("/api/properties/{prop_id}/open-house-slots")
+async def get_open_house_slots(prop_id: int):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM open_house_slots WHERE property_id=? ORDER BY day_of_week, start_time",
+        (prop_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/properties/{prop_id}/open-house-slots")
+async def add_open_house_slot(prop_id: int, slot: OpenHouseSlot):
+    conn = get_conn()
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    cur = conn.execute("""
+        INSERT INTO open_house_slots (property_id, day_of_week, start_time, end_time, label, created_at)
+        VALUES (?,?,?,?,?,?)
+    """, (prop_id, slot.day_of_week.lower(), slot.start_time, slot.end_time, slot.label, now))
+    conn.commit()
+    slot_id = cur.lastrowid
+    conn.close()
+    return {"ok": True, "id": slot_id}
+
+@app.delete("/api/open-house-slots/{slot_id}")
+async def delete_open_house_slot(slot_id: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM open_house_slots WHERE id=?", (slot_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ── Thread view ───────────────────────────────────────────────────────────────
+
+@app.get("/api/leads/{lead_id}/thread")
+async def get_lead_thread(lead_id: int):
+    conn = get_conn()
+    lead = conn.execute("SELECT gmail_thread_id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    conn.close()
+    if not lead or not lead["gmail_thread_id"]:
+        return {"ok": False, "error": "No thread ID for this lead"}
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail not connected"}
+    try:
+        messages = await asyncio.to_thread(gm.get_thread_messages, creds, lead["gmail_thread_id"])
+        return {"ok": True, "messages": messages}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Availability windows + timezone (stored in config table) ──────────────────
+
+class AvailabilityConfig(BaseModel):
+    timezone: Optional[str] = None
+    availability_windows: Optional[str] = None  # JSON string
+
+@app.get("/api/config/availability")
+async def get_availability():
+    conn = get_conn()
+    tz   = conn.execute("SELECT value FROM config WHERE key='timezone'").fetchone()
+    avail = conn.execute("SELECT value FROM config WHERE key='availability_windows'").fetchone()
+    conn.close()
+    return {
+        "timezone": tz["value"] if tz else "America/Los_Angeles",
+        "availability_windows": avail["value"] if avail else None,
+    }
+
+@app.post("/api/config/availability")
+async def save_availability(cfg: AvailabilityConfig):
+    conn = get_conn()
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    if cfg.timezone is not None:
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('timezone',?,?)",
+            (cfg.timezone, now)
+        )
+    if cfg.availability_windows is not None:
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('availability_windows',?,?)",
+            (cfg.availability_windows, now)
+        )
     conn.commit()
     conn.close()
     return {"ok": True}
