@@ -1122,16 +1122,22 @@
     <header>
       <div><h2>Calendar</h2><p>Upcoming events from your Google Calendar</p></div>
       <div class="header-actions">
-        <button class="secondary" onclick="loadCalendarEvents()">↻ Refresh</button>
+        <button class="secondary" onclick="calPrevMonth()">‹ Prev</button>
+        <span id="cal-month-label" style="font-weight:600;font-size:15px;padding:0 10px;color:var(--text)"></span>
+        <button class="secondary" onclick="calNextMonth()">Next ›</button>
+        <button class="secondary" onclick="calGoToday()" style="margin-left:6px">Today</button>
+        <button class="secondary" onclick="loadCalendarEvents()" style="margin-left:6px">↻ Refresh</button>
       </div>
     </header>
     <div class="content">
-      <div class="panel">
-        <div class="panel-header">
-          Upcoming Events
-          <span id="calendar-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+      <div class="panel" style="padding:0">
+        <!-- Day-of-week header -->
+        <div id="cal-dow-header" style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border)">
+          ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
+            `<div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">${d}</div>`
+          ).join('')}
         </div>
-        <div id="calendar-container">
+        <div id="calendar-container" style="overflow-y:auto">
           <div class="empty-state"><div class="icon">📅</div><p>Loading…</p></div>
         </div>
       </div>
@@ -1405,9 +1411,9 @@
                 <td><a href="mailto:${l.from_email}" style="color:var(--accent2)">${l.from_email}</a></td>
                 <td>${l.phone || '—'}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  ${(l.subject || '').includes('[APPOINTMENT]')
+                  ${_appointmentsCache.some(a => a.thread_id && a.thread_id === l.gmail_thread_id && a.status !== 'deleted')
                     ? `<span style="font-size:10px;background:rgba(108,99,255,0.18);color:var(--accent2);padding:1px 6px;border-radius:10px;margin-right:5px;white-space:nowrap">📅 APPT</span>`
-                    : ''}${(l.subject || '—').replace('[APPOINTMENT]','').trim()}
+                    : ''}${l.subject || '—'}
                 </td>
                 <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
                 <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
@@ -1443,16 +1449,34 @@
     }
     el.innerHTML = `
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Budget</th><th>Received</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Budget</th><th>Received</th><th>Appointment</th></tr></thead>
         <tbody>
-          ${leads.map(l => `
+          ${leads.map(l => {
+            // Find any non-deleted appointment linked to this lead
+            const appt = _appointmentsCache.find(a => a.lead_id === l.id && a.status !== 'deleted');
+            let apptCell = '<span style="color:var(--muted);font-size:11px">—</span>';
+            if (appt) {
+              if (appt.status === 'accepted') {
+                const dt = appt.proposed_datetime
+                  ? new Date(appt.proposed_datetime).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+                  : appt.proposed_date_text || 'Scheduled';
+                apptCell = `<span style="font-size:11px;color:#4ade80;font-weight:600">✅ ${dt}</span>`;
+              } else if (appt.status === 'pending') {
+                apptCell = `<span style="font-size:11px;background:rgba(108,99,255,0.18);color:var(--accent2);padding:2px 7px;border-radius:10px">⏳ Pending</span>`;
+              } else if (appt.status === 'rejected') {
+                apptCell = `<span style="font-size:11px;color:var(--muted)">↩ Alt times sent</span>`;
+              }
+            }
+            return `
             <tr>
               <td>${l.name || '—'}</td>
               <td style="color:var(--accent2)">${l.from_email}</td>
-              <td>${l.subject || '—'}</td>
+              <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
               <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
               <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
-            </tr>`).join('')}
+              <td>${apptCell}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>`;
   }
@@ -2681,48 +2705,111 @@
   }
 
   // ── Calendar tab ──────────────────────────────────────────────────────────
+  // ── Calendar Month View ───────────────────────────────────────────────────
+  let _calYear  = new Date().getFullYear();
+  let _calMonth = new Date().getMonth(); // 0-indexed
+  let _calEvents = [];
+
+  function calPrevMonth() { _calMonth--; if (_calMonth < 0) { _calMonth = 11; _calYear--; } renderCalendarMonth(); }
+  function calNextMonth() { _calMonth++; if (_calMonth > 11) { _calMonth = 0;  _calYear++; } renderCalendarMonth(); }
+  function calGoToday()   { const n = new Date(); _calYear = n.getFullYear(); _calMonth = n.getMonth(); renderCalendarMonth(); }
+
   async function loadCalendarEvents() {
     const container = document.getElementById('calendar-container');
     if (!container) return;
     try {
       const r = await fetch('/api/calendar/events');
       const d = await r.json();
-
       if (!d.ok) {
         container.innerHTML = `<div class="empty-state"><div class="icon">🔗</div><p>${d.error || 'Connect Gmail/Calendar to see events.'}</p></div>`;
         return;
       }
-
-      const events = d.events;
-      const countEl = document.getElementById('calendar-count');
-      if (countEl) countEl.textContent = events.length ? `${events.length} upcoming` : '';
-
-      if (!events.length) {
-        container.innerHTML = `<div class="empty-state"><div class="icon">📅</div><p>No upcoming events on your calendar.</p></div>`;
-        return;
-      }
-
-      container.innerHTML = `
-        <table>
-          <thead><tr>
-            <th>Event</th><th>Date &amp; Time</th><th>Location</th><th>Source</th>
-          </tr></thead>
-          <tbody>
-            ${events.map(e => {
-              const start = e.start ? new Date(e.start).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
-              return `
-                <tr>
-                  <td style="font-weight:500">${e.summary}</td>
-                  <td style="color:var(--muted);font-size:12px">${start}</td>
-                  <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.location || '—'}</td>
-                  <td>${e.lucilease ? '<span style="font-size:11px;background:rgba(108,99,255,0.15);color:var(--accent2);padding:2px 7px;border-radius:20px">[Lucilease]</span>' : '<span style="font-size:11px;color:var(--muted)">Google</span>'}</td>
-                </tr>`;
-            }).join('')}
-          </tbody>
-        </table>`;
+      _calEvents = d.events || [];
+      renderCalendarMonth();
     } catch(e) {
       if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load calendar.</p></div>`;
     }
+  }
+
+  function renderCalendarMonth() {
+    const container = document.getElementById('calendar-container');
+    if (!container) return;
+
+    const label = document.getElementById('cal-month-label');
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    if (label) label.textContent = `${monthNames[_calMonth]} ${_calYear}`;
+
+    const today     = new Date();
+    today.setHours(0,0,0,0);
+    const todayStr  = today.toDateString();
+
+    // Current week boundaries (Sun–Sat)
+    const curWeekSun = new Date(today);
+    curWeekSun.setDate(today.getDate() - today.getDay());
+    const curWeekSat = new Date(curWeekSun); curWeekSat.setDate(curWeekSun.getDate() + 6);
+    // Next week boundaries
+    const nxtWeekSun = new Date(curWeekSun); nxtWeekSun.setDate(curWeekSun.getDate() + 7);
+    const nxtWeekSat = new Date(nxtWeekSun); nxtWeekSat.setDate(nxtWeekSun.getDate() + 6);
+
+    // Build event lookup: dateStr → array of events
+    const evByDate = {};
+    for (const e of _calEvents) {
+      if (!e.start) continue;
+      const ds = new Date(e.start).toDateString();
+      (evByDate[ds] = evByDate[ds] || []).push(e);
+    }
+
+    // Calendar grid
+    const firstDay  = new Date(_calYear, _calMonth, 1).getDay(); // 0=Sun
+    const daysInMo  = new Date(_calYear, _calMonth + 1, 0).getDate();
+    const totalCells = Math.ceil((firstDay + daysInMo) / 7) * 7;
+
+    let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr)">`;
+
+    for (let i = 0; i < totalCells; i++) {
+      const dayNum  = i - firstDay + 1;
+      const inMonth = dayNum >= 1 && dayNum <= daysInMo;
+      const cellDate = new Date(_calYear, _calMonth, dayNum);
+      cellDate.setHours(0,0,0,0);
+
+      const isToday    = inMonth && cellDate.toDateString() === todayStr;
+      const isCurWeek  = inMonth && cellDate >= curWeekSun && cellDate <= curWeekSat;
+      const isNxtWeek  = inMonth && cellDate >= nxtWeekSun && cellDate <= nxtWeekSat;
+      const events     = inMonth ? (evByDate[cellDate.toDateString()] || []) : [];
+
+      // Cell background
+      let bg = 'var(--bg)';
+      if (isToday)       bg = 'rgba(108,99,255,0.13)';
+      else if (isCurWeek) bg = 'rgba(108,99,255,0.06)';
+      else if (isNxtWeek) bg = 'rgba(56,189,248,0.07)';
+      if (!inMonth)      bg = 'rgba(0,0,0,0.12)';
+
+      const borderRight  = 'border-right:1px solid var(--border)';
+      const borderBottom = 'border-bottom:1px solid var(--border)';
+      const dayColor     = isToday ? 'var(--accent)' : inMonth ? 'var(--text)' : 'var(--muted)';
+      const dayWeight    = isToday ? '700' : '400';
+
+      const evHtml = events.map(e => {
+        const time = new Date(e.start).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+        const tag  = e.lucilease
+          ? `style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;display:block;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${e.summary} · ${time}"`
+          : `style="background:rgba(255,255,255,0.07);color:var(--text);font-size:10px;padding:2px 5px;border-radius:4px;display:block;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${e.summary} · ${time}"`;
+        return `<span ${tag}>${time} ${e.summary}</span>`;
+      }).join('');
+
+      html += `
+        <div style="min-height:100px;padding:8px 6px 6px 8px;background:${bg};${borderRight};${borderBottom};vertical-align:top;position:relative">
+          <div style="font-size:13px;font-weight:${dayWeight};color:${dayColor};margin-bottom:5px;${isToday ? 'background:var(--accent);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px' : ''}">
+            ${inMonth ? dayNum : ''}
+          </div>
+          ${evHtml}
+          ${isCurWeek && !isToday ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:var(--accent);opacity:0.5">this week</div>` : ''}
+          ${isNxtWeek ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:#38bdf8;opacity:0.5">next week</div>` : ''}
+        </div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
   }
 
   loadLeads();    // preload for dashboard recent leads
@@ -2730,6 +2817,7 @@
   loadArchive();      // preload archive badge
   loadSent();         // preload sent badge
   loadAppointments(); // preload pending appointments on dashboard
+  renderCalendarMonth(); // paint empty month grid on init (events fill in on tab open)
   setPollDisplay();
   buildSwatches();
   loadAvailabilitySettings();
