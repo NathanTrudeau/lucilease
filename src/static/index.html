@@ -1460,7 +1460,7 @@
       </div>
       <div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Body</div>
-        <div class="draft-preview" style="white-space:pre-wrap;max-height:360px;overflow-y:auto">${item.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
+        <div class="draft-preview" style="white-space:pre-wrap;max-height:360px;overflow-y:auto">${item.body_full || item.body_excerpt || item.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
       </div>`;
     document.getElementById('draft-gmail-link').style.display = 'none';
     openModal('draft-modal');

@@ -16,6 +16,7 @@ class Lead(BaseModel):
     phone:               Optional[str] = None
     subject:             Optional[str] = None
     body_excerpt:        Optional[str] = None
+    body_full:           Optional[str] = None
     budget_monthly_usd:  Optional[int] = None
     first_seen_at:       str
     fingerprint:         str
@@ -68,13 +69,15 @@ def parse_email_to_lead(headers: dict, body: str, msg_id: str = None) -> Lead:
 
     fp = make_fingerprint(from_email, phone or "")
 
+    body_clean = body.strip()
     return Lead(
         source="gmail" if msg_id else "fixture",
         from_email=from_email,
         name=name,
         phone=phone,
         subject=subject,
-        body_excerpt=body.strip()[:600],
+        body_excerpt=body_clean[:600],
+        body_full=body_clean,
         budget_monthly_usd=budget,
         first_seen_at=utc_now(),
         fingerprint=fp,

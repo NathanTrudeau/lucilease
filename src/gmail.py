@@ -120,10 +120,31 @@ def _save_token(creds: Credentials) -> None:
 
 # ── Gmail polling ─────────────────────────────────────────────────────────────
 
+# ── Housing relevance filter ──────────────────────────────────────────────────
+# Keywords that suggest a housing/real estate inquiry.
+# Any match in subject OR body passes the filter.
+# Set LUCILEASE_NO_FILTER=1 in .env to disable (accept all inbox emails).
+HOUSING_KEYWORDS = [
+    "rent", "rental", "apartment", "lease", "listing", "property", "properties",
+    "house", "home", "bedroom", "studio", "unit", "available", "availability",
+    "showing", "tour", "move in", "move-in", "vacancy", "tenant", "landlord",
+    "square feet", "sq ft", "sqft", "deposit", "pet friendly", "furnished",
+    "real estate", "realty", "realtor", "for rent", "for sale", "buy", "buying",
+    "mortgage", "down payment", "open house",
+]
+
+def _is_housing_relevant(subject: str, body: str) -> bool:
+    """Return True if the email looks like a housing/real estate inquiry."""
+    if os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1":
+        return True
+    text = ((subject or "") + " " + (body or "")).lower()
+    return any(kw in text for kw in HOUSING_KEYWORDS)
+
+
 def poll_inbox(label_ids: list[str] = None) -> int:
     """
-    Fetch unread inbox messages, parse into leads, and store new ones.
-    Returns the count of new leads found.
+    Fetch inbox messages from the last 7 days, filter for housing relevance,
+    parse into leads, and store new ones. Returns count of new leads found.
     """
     creds = get_credentials()
     if not creds:
@@ -144,7 +165,7 @@ def poll_inbox(label_ids: list[str] = None) -> int:
         ).execute()
 
         messages = result.get("messages", [])
-        print(f"[gmail] Found {len(messages)} unread message(s).")
+        print(f"[gmail] Found {len(messages)} message(s) in inbox scan.")
 
         for msg_ref in messages:
             msg_id = msg_ref["id"]
@@ -165,6 +186,12 @@ def poll_inbox(label_ids: list[str] = None) -> int:
             headers     = {h["name"]: h["value"] for h in headers_raw}
             body        = _extract_body(msg["payload"])
 
+            # Skip non-housing emails
+            subject = headers.get("Subject", "")
+            if not _is_housing_relevant(subject, body):
+                print(f"[gmail] Skipped (not housing-related): {subject!r}")
+                continue
+
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
 
             # Dedup by fingerprint
@@ -175,21 +202,22 @@ def poll_inbox(label_ids: list[str] = None) -> int:
                 print(f"[gmail] Duplicate lead skipped: {lead.from_email}")
                 continue
 
-            # Insert
+            # Insert — store full body in body_full, excerpt in body_excerpt
             conn.execute("""
                 INSERT INTO leads
                     (fingerprint, source, from_email, name, phone, subject,
-                     body_excerpt, budget_monthly_usd, status, first_seen_at, gmail_msg_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                     body_excerpt, body_full, budget_monthly_usd, status,
+                     first_seen_at, gmail_msg_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 lead.fingerprint, lead.source, lead.from_email, lead.name,
-                lead.phone, lead.subject, lead.body_excerpt,
+                lead.phone, lead.subject, lead.body_excerpt, lead.body_full,
                 lead.budget_monthly_usd, "new", lead.first_seen_at,
                 lead.gmail_msg_id,
             ))
             conn.commit()
             new_count += 1
-            print(f"[gmail] New lead: {lead.from_email} ({lead.fingerprint[:10]}...)")
+            print(f"[gmail] New lead: {lead.from_email} — {subject!r}")
 
     except Exception as e:
         print(f"[gmail] Poll error: {e}")
@@ -200,18 +228,40 @@ def poll_inbox(label_ids: list[str] = None) -> int:
 
 
 def _extract_body(payload: dict) -> str:
-    """Recursively extract plain-text body from a Gmail message payload."""
+    """
+    Recursively extract readable body text from a Gmail message payload.
+    Prefers text/plain; falls back to stripped text/html.
+    Handles nested multipart structures (multipart/alternative, /related, /mixed).
+    """
     mime = payload.get("mimeType", "")
 
     if mime == "text/plain":
         data = payload.get("body", {}).get("data", "")
-        return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
+        if data:
+            return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
+
+    if mime == "text/html":
+        data = payload.get("body", {}).get("data", "")
+        if data:
+            html = base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
+            return strip_html(html)
 
     if mime.startswith("multipart/"):
-        for part in payload.get("parts", []):
-            text = _extract_body(part)
-            if text:
-                return text
+        parts = payload.get("parts", [])
+        # For multipart/alternative prefer plain text (usually first)
+        plain_result = ""
+        html_result = ""
+        for part in parts:
+            part_mime = part.get("mimeType", "")
+            if part_mime == "text/plain":
+                plain_result = _extract_body(part)
+            elif part_mime == "text/html" and not plain_result:
+                html_result = _extract_body(part)
+            elif part_mime.startswith("multipart/"):
+                nested = _extract_body(part)
+                if nested:
+                    plain_result = plain_result or nested
+        return plain_result or html_result
 
     return ""
 
