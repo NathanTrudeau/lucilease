@@ -304,6 +304,21 @@
     /* Sort button active */
     button.sort-active { background: rgba(108,99,255,0.2); color: var(--accent2); }
 
+    /* ── [AI] tag visual treatment inside buttons ── */
+    /* Browsers render the literal text; we highlight via a wrapper span when possible.
+       For inline button text we rely on the accent color leaking through the label. */
+    button[title*="AI"] { border: 1px solid rgba(108,99,255,0.35); }
+    button[onclick*="Draft"][title*="AI"],
+    button[id*="draft-all"] {
+      background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+      color: #fff;
+    }
+    button[id*="draft-all"].secondary {
+      background: rgba(108,99,255,0.12);
+      color: var(--accent2);
+      border: 1px solid rgba(108,99,255,0.3);
+    }
+
     /* ── Search bar ── */
     .tab-search {
       display: flex;
@@ -872,7 +887,7 @@
       <div class="header-actions">
         <button class="secondary" onclick="manualPoll()" id="poll-btn">↻ Check now</button>
         <button onclick="openNewDraftModal()" title="Compose a blank email">+ New Draft</button>
-        <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Auto-generate AI drafts for all inbox leads in the background">⚡ Auto-Draft All</button>
+        <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Auto-generate AI drafts for all inbox leads in the background">⚡ Auto-Draft All [AI]</button>
         <button class="secondary" id="inbox-bulk-btn" onclick="archiveSelected()" style="display:none">📦 Archive (<span id="inbox-bulk-count">0</span>)</button>
       </div>
     </header>
@@ -1302,7 +1317,7 @@
                   <div class="actions">
                     <button class="secondary" onclick="viewEmailModal('inbox', ${l.id})">👁 View</button>
                     ${l.gmail_thread_id ? `<button class="secondary" onclick="viewThread(${l.id}, '${l.subject || ''}')">💬 Thread</button>` : ''}
-                    <button onclick="generateDraft(${l.id}, this)">✍ Draft</button>
+                    <button onclick="generateDraft(${l.id}, this)" title="Generate an AI reply draft for this lead">✍ Draft [AI]</button>
                     ${existingEmails.has(l.from_email.toLowerCase())
                       ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
                       : `<button class="success" onclick="addClient(${l.id})">+ Client</button>`}
@@ -1453,20 +1468,20 @@
     try {
       const r = await fetch('/api/leads?status=new');
       const leads = await r.json();
-      if (!leads.length) { btn.textContent = '⚡ Auto-Draft All'; btn.disabled = false; return; }
+      if (!leads.length) { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; return; }
       let done = 0;
       for (const lead of leads) {
         try {
           await fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' });
         } catch(e) { /* individual failures are fine */ }
         done++;
-        btn.textContent = `⏳ ${done}/${leads.length}`;
+        btn.textContent = `⏳ [AI] ${done}/${leads.length}`;
       }
-      btn.textContent = `✓ ${done} Auto-Drafted`;
+      btn.textContent = `✓ ${done} Drafted [AI]`;
       await loadDrafts();
-      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All'; btn.disabled = false; }, 3000);
+      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; }, 3000);
     } catch(e) {
-      btn.textContent = '⚡ Auto-Draft All';
+      btn.textContent = '⚡ Auto-Draft All [AI]';
       btn.disabled = false;
     }
   }
@@ -1860,18 +1875,18 @@
   // ── Draft reply ───────────────────────────────────────────────────────────
   async function generateDraft(leadId, btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Drafting...';
+    btn.textContent = '⏳ [AI] Drafting...';
     try {
       const r = await fetch(`/api/leads/${leadId}/draft`, { method: 'POST' });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || 'Draft failed');
-      btn.textContent = '✓ Drafted';
-      showToast(d.gmail_draft_id ? '✓ Draft saved to Gmail' : '✓ Draft saved locally');
+      btn.textContent = '✓ Drafted [AI]';
+      showToast(d.gmail_draft_id ? '✓ [AI] Draft saved to Gmail' : '✓ [AI] Draft saved locally');
       loadDrafts(); // refresh badge + list
     } catch(e) {
       showToast('✗ Draft failed: ' + e.message, true);
       btn.disabled = false;
-      btn.textContent = '✍ Draft';
+      btn.textContent = '✍ Draft [AI]';
     }
   }
 
