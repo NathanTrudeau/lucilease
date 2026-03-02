@@ -513,6 +513,66 @@
   </div>
 </div>
 
+<!-- ── Accept Appointment Modal (datetime confirm) ── -->
+<div class="modal-overlay" id="accept-appt-modal">
+  <div class="modal" style="width:560px">
+    <h3>✅ Confirm Appointment</h3>
+    <input type="hidden" id="accept-appt-id">
+    <div class="form-group">
+      <label>Confirm Date &amp; Time</label>
+      <input type="datetime-local" id="accept-appt-dt" />
+      <div style="font-size:12px;color:var(--muted);margin-top:6px" id="accept-appt-proposed"></div>
+    </div>
+    <div class="form-group">
+      <label>Location (optional override)</label>
+      <input type="text" id="accept-appt-location" placeholder="Address or location" />
+    </div>
+    <div style="font-size:13px;color:var(--muted);background:var(--bg);border-radius:8px;padding:12px;margin-bottom:4px">
+      Accepting will: create a Google Calendar event with a 30-min reminder, and send a brief confirmation email to the client.
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('accept-appt-modal')">Cancel</button>
+      <button class="ai-action" onclick="confirmAcceptAppointment()">✅ Accept &amp; Schedule [AI]</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Appointment → Compose Modal ── -->
+<div class="modal-overlay" id="delete-appt-modal">
+  <div class="modal" style="width:720px;max-height:90vh;display:flex;flex-direction:column">
+    <h3>🗑 Remove Appointment &amp; Compose</h3>
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px">
+      <!-- Blank compose area at top -->
+      <div style="background:var(--bg);border:1px solid var(--accent);border-radius:10px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.4px">New Message</div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>To</label>
+          <input type="text" id="del-compose-to" placeholder="recipient@email.com">
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>Subject</label>
+          <input type="text" id="del-compose-subject" placeholder="Subject">
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>Message</label>
+          <textarea id="del-compose-body" style="min-height:100px;font-size:13px" placeholder="Type your message…"></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <button onclick="saveComposeFromDelete()">💾 Save as Draft</button>
+        </div>
+      </div>
+      <!-- Thread history below compose -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:10px">Email Thread</div>
+        <div id="del-thread-messages" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+    </div>
+    <div class="modal-footer" style="margin-top:12px">
+      <button class="secondary" onclick="closeModal('delete-appt-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Thread View Modal ── -->
 <div class="modal-overlay" id="thread-modal">
   <div class="modal" style="width:760px;max-height:88vh;display:flex;flex-direction:column">
@@ -864,6 +924,17 @@
         </div>
       </div>
 
+      <!-- Pending Appointments -->
+      <div class="panel" id="appt-dashboard-panel" style="margin-bottom:16px">
+        <div class="panel-header">
+          📅 Pending Appointments
+          <span id="appt-badge-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        </div>
+        <div id="appt-container">
+          <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📅</div><p>No pending appointments detected yet.</p></div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-header">
           Recent Leads
@@ -1038,10 +1109,21 @@
 
   <!-- ── Calendar ── -->
   <div id="page-calendar" class="page">
-    <header><div><h2>Calendar</h2><p>Upcoming appointments</p></div></header>
+    <header>
+      <div><h2>Calendar</h2><p>Upcoming events from your Google Calendar</p></div>
+      <div class="header-actions">
+        <button class="secondary" onclick="loadCalendarEvents()">↻ Refresh</button>
+      </div>
+    </header>
     <div class="content">
       <div class="panel">
-        <div class="empty-state"><div class="icon">📅</div><p>Google Calendar integration — coming in Phase 4.</p></div>
+        <div class="panel-header">
+          Upcoming Events
+          <span id="calendar-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        </div>
+        <div id="calendar-container">
+          <div class="empty-state"><div class="icon">📅</div><p>Loading…</p></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1148,6 +1230,8 @@
     if (name === 'properties') loadProperties();
     if (name === 'archive')    loadArchive();
     if (name === 'sent')       loadSent();
+    if (name === 'calendar')   loadCalendarEvents();
+    if (name === 'dashboard')  loadAppointments();
   }
 
   // ── Theme ─────────────────────────────────────────────────────────────────
@@ -2360,10 +2444,245 @@
   });
 
   refreshAll();
+  // ── Appointments ─────────────────────────────────────────────────────────
+  let _appointmentsCache = [];
+
+  async function loadAppointments() {
+    const container = document.getElementById('appt-container');
+    try {
+      const r = await fetch('/api/appointments?status=pending');
+      _appointmentsCache = await r.json();
+      const appts = _appointmentsCache;
+
+      const badgeEl = document.getElementById('appt-badge-count');
+      if (badgeEl) badgeEl.textContent = appts.length ? `${appts.length} pending` : '';
+
+      // Also update sidebar nav badge
+      const navBadge = document.getElementById('appt-nav-badge');
+      if (navBadge) {
+        navBadge.textContent = appts.length;
+        navBadge.className = 'badge' + (appts.length > 0 ? '' : ' zero');
+      }
+
+      if (!appts.length) {
+        container.innerHTML = `<div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📅</div><p>No pending appointments detected yet.</p></div>`;
+        return;
+      }
+
+      const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍' };
+
+      container.innerHTML = appts.map(a => `
+        <div id="appt-card-${a.id}" style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--bg)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:16px">${mtypeIcon[a.meeting_type] || '📅'}</span>
+                <span style="font-size:13px;font-weight:600;text-transform:capitalize">${(a.meeting_type || 'Appointment').replace('_',' ')}</span>
+                <span style="font-size:10px;background:rgba(108,99,255,0.15);color:var(--accent2);padding:2px 7px;border-radius:20px">[AI detected]</span>
+                <span style="font-size:10px;color:var(--muted)">${a.source === 'sent' ? '(from your sent mail)' : '(from inbox)'}</span>
+              </div>
+              <div style="font-size:13px;margin-bottom:4px"><strong>${a.client_name || a.client_email || '—'}</strong>${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
+              <div style="font-size:12px;color:var(--accent2);margin-bottom:4px">${a.client_email || '—'}</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px">🕐 ${a.proposed_date_text || a.proposed_datetime || 'Time TBD'}</div>
+              ${a.proposed_address ? `<div style="font-size:12px;color:var(--muted)">📍 ${a.proposed_address}</div>` : ''}
+              ${a.context_snippet ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">"${a.context_snippet}"</div>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;align-items:flex-end">
+              <button class="ai-action" onclick="openAcceptModal(${a.id})" style="width:100%">✅ Accept [AI]</button>
+              <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">✗ Reject &amp; Auto-Reply [AI]</button>
+              <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
+            </div>
+          </div>
+        </div>`).join('');
+    } catch(e) {
+      if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load appointments.</p></div>`;
+    }
+  }
+
+  function openAcceptModal(id) {
+    const appt = _appointmentsCache.find(a => a.id === id);
+    if (!appt) return;
+    document.getElementById('accept-appt-id').value = id;
+    document.getElementById('accept-appt-location').value = appt.proposed_address || '';
+    const proposedEl = document.getElementById('accept-appt-proposed');
+    proposedEl.textContent = appt.proposed_date_text
+      ? `Detected time: ${appt.proposed_date_text}`
+      : appt.proposed_datetime ? `Detected: ${appt.proposed_datetime}` : 'No time detected — please set one';
+    // Pre-fill datetime-local if we have an ISO datetime
+    const dtInput = document.getElementById('accept-appt-dt');
+    if (appt.proposed_datetime) {
+      try {
+        // datetime-local needs YYYY-MM-DDTHH:MM format
+        dtInput.value = appt.proposed_datetime.slice(0, 16);
+      } catch(e) { dtInput.value = ''; }
+    } else {
+      dtInput.value = '';
+    }
+    openModal('accept-appt-modal');
+  }
+
+  async function confirmAcceptAppointment() {
+    const id = parseInt(document.getElementById('accept-appt-id').value);
+    const dt = document.getElementById('accept-appt-dt').value;
+    const loc = document.getElementById('accept-appt-location').value.trim();
+    if (!dt) { alert('Please set a date and time for the appointment.'); return; }
+
+    const btn = document.querySelector('#accept-appt-modal .ai-action');
+    btn.disabled = true;
+    btn.textContent = '⏳ Scheduling [AI]...';
+
+    const appt = _appointmentsCache.find(a => a.id === id) || {};
+    if (loc && appt.proposed_address !== loc) {
+      // patch address into local cache for confirmation email
+      appt.proposed_address = loc;
+    }
+
+    try {
+      const r = await fetch(`/api/appointments/${id}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed_datetime: dt, confirmed_address: loc || null }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        closeModal('accept-appt-modal');
+        document.getElementById(`appt-card-${id}`)?.remove();
+        showToast('✅ Appointment scheduled + confirmation sent [AI]');
+        await loadAppointments();
+        await loadCalendarEvents();
+      } else {
+        alert('Accept failed: ' + (d.error || 'unknown'));
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '✅ Accept & Schedule [AI]';
+  }
+
+  async function rejectAppointment(id, btn) {
+    if (!confirm('Reject this appointment and auto-draft an alternative times email?')) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ [AI] Drafting...';
+    try {
+      const r = await fetch(`/api/appointments/${id}/reject`, { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById(`appt-card-${id}`)?.remove();
+        showToast('✗ Rejected — alternative times draft saved [AI]');
+        await loadAppointments();
+        await loadDrafts();
+      } else {
+        alert('Reject failed: ' + (d.error || 'unknown'));
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '✗ Reject & Auto-Reply [AI]';
+  }
+
+  let _deleteApptThreadId = null;
+
+  async function deleteAppointment(id) {
+    if (!confirm('Remove this appointment? You can compose a message from the thread history.')) return;
+    try {
+      const r = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      document.getElementById(`appt-card-${id}`)?.remove();
+      await loadAppointments();
+
+      // Pre-fill compose area and show thread
+      document.getElementById('del-compose-to').value      = d.client_email || '';
+      document.getElementById('del-compose-subject').value = d.subject ? `Re: ${d.subject}` : '';
+      document.getElementById('del-compose-body').value    = '';
+      _deleteApptThreadId = d.thread_id || null;
+
+      const msgs = d.messages || [];
+      const msgsEl = document.getElementById('del-thread-messages');
+      if (!msgs.length) {
+        msgsEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No thread history available.</div>';
+      } else {
+        msgsEl.innerHTML = msgs.map((m, i) => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--accent2);margin-bottom:4px">${m.from || '—'} · ${m.date || ''}</div>
+            <div style="font-size:12px;white-space:pre-wrap;color:var(--text);max-height:120px;overflow-y:auto">${m.body || '(empty)'}</div>
+          </div>`).join('');
+      }
+      openModal('delete-appt-modal');
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  async function saveComposeFromDelete() {
+    const to      = document.getElementById('del-compose-to').value.trim();
+    const subject = document.getElementById('del-compose-subject').value.trim();
+    const body    = document.getElementById('del-compose-body').value.trim();
+    if (!to || !subject) { alert('To and Subject are required.'); return; }
+    const r = await fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email: to, subject, body }),
+    });
+    const d = await r.json();
+    if (d.id) {
+      showToast('✓ Draft saved');
+      closeModal('delete-appt-modal');
+      await loadDrafts();
+    }
+  }
+
+  // ── Calendar tab ──────────────────────────────────────────────────────────
+  async function loadCalendarEvents() {
+    const container = document.getElementById('calendar-container');
+    if (!container) return;
+    try {
+      const r = await fetch('/api/calendar/events');
+      const d = await r.json();
+
+      if (!d.ok) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">🔗</div><p>${d.error || 'Connect Gmail/Calendar to see events.'}</p></div>`;
+        return;
+      }
+
+      const events = d.events;
+      const countEl = document.getElementById('calendar-count');
+      if (countEl) countEl.textContent = events.length ? `${events.length} upcoming` : '';
+
+      if (!events.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">📅</div><p>No upcoming events on your calendar.</p></div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Event</th><th>Date &amp; Time</th><th>Location</th><th>Source</th>
+          </tr></thead>
+          <tbody>
+            ${events.map(e => {
+              const start = e.start ? new Date(e.start).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+              return `
+                <tr>
+                  <td style="font-weight:500">${e.summary}</td>
+                  <td style="color:var(--muted);font-size:12px">${start}</td>
+                  <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.location || '—'}</td>
+                  <td>${e.lucilease ? '<span style="font-size:11px;background:rgba(108,99,255,0.15);color:var(--accent2);padding:2px 7px;border-radius:20px">[Lucilease]</span>' : '<span style="font-size:11px;color:var(--muted)">Google</span>'}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch(e) {
+      if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load calendar.</p></div>`;
+    }
+  }
+
   loadLeads();    // preload for dashboard recent leads
   loadDrafts();   // preload drafts badge
-  loadArchive();  // preload archive badge
-  loadSent();     // preload sent badge
+  loadArchive();      // preload archive badge
+  loadSent();         // preload sent badge
+  loadAppointments(); // preload pending appointments on dashboard
   setPollDisplay();
   buildSwatches();
   loadAvailabilitySettings();

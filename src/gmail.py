@@ -28,9 +28,10 @@ from db import get_conn
 # ── Config ────────────────────────────────────────────────────────────────────
 
 SCOPES = [
-    "https://www.googleapis.com/auth/gmail.modify",  # read + label/archive ops
+    "https://www.googleapis.com/auth/gmail.modify",    # read + label/archive ops
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events", # calendar read/write
 ]
 
 TOKEN_FILE = pathlib.Path("/data/token.json")
@@ -138,6 +139,79 @@ def _is_housing_relevant(subject: str, body: str) -> bool:
         return True
     text = ((subject or "") + " " + (body or "")).lower()
     return any(kw in text for kw in HOUSING_KEYWORDS)
+
+
+CONFIRMATION_KEYWORDS = [
+    "confirmed", "it's confirmed", "see you", "see you then", "see you at",
+    "looking forward to meeting", "looking forward to seeing", "scheduled for",
+    "we're all set", "all set", "i'll be there", "we'll be there",
+    "sounds good", "perfect", "that works", "works for me", "works for us",
+    "that time works", "meet you at", "appointment confirmed", "set for",
+    "booked for", "i'll see you", "we're meeting", "it's a date",
+]
+
+def is_confirmation_candidate(subject: str, body: str) -> bool:
+    """Quick pre-filter: does this email look like a meeting confirmation?"""
+    text = ((subject or "") + " " + (body or "")).lower()
+    return any(kw in text for kw in CONFIRMATION_KEYWORDS)
+
+
+def scan_sent_for_confirmations() -> list[dict]:
+    """
+    Scan sent mail from the last 7 days for confirmation candidates.
+    Returns list of {msg_id, thread_id, headers, body} for qualifying messages.
+    """
+    creds = get_credentials()
+    if not creds:
+        return []
+
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    conn    = get_conn()
+    results = []
+
+    try:
+        query  = "in:sent newer_than:7d"
+        result = service.users().messages().list(
+            userId="me", q=query, maxResults=50
+        ).execute()
+
+        for msg_ref in result.get("messages", []):
+            msg_id = msg_ref["id"]
+            msg = service.users().messages().get(
+                userId="me", id=msg_id, format="full"
+            ).execute()
+            thread_id   = msg.get("threadId")
+            headers_raw = msg["payload"].get("headers", [])
+            headers     = {h["name"]: h["value"] for h in headers_raw}
+            body        = _extract_body(msg["payload"])
+            subject     = headers.get("Subject", "")
+
+            if not _is_housing_relevant(subject, body):
+                continue
+            if not is_confirmation_candidate(subject, body):
+                continue
+
+            # Skip threads already tracked as appointments
+            existing = conn.execute(
+                "SELECT id FROM appointments WHERE thread_id=? AND status != 'deleted'",
+                (thread_id,)
+            ).fetchone()
+            if existing:
+                continue
+
+            results.append({
+                "msg_id":    msg_id,
+                "thread_id": thread_id,
+                "headers":   headers,
+                "body":      body,
+                "subject":   subject,
+            })
+    except Exception as e:
+        print(f"[gmail] scan_sent error: {e}")
+    finally:
+        conn.close()
+
+    return results
 
 
 def poll_inbox(label_ids: list[str] = None) -> int:

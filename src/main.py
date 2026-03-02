@@ -16,6 +16,7 @@ from typing import Optional
 
 from db import init_db, get_conn
 import gmail as gm
+import calendar_service as cal
 
 STATIC    = pathlib.Path(__file__).parent / "static"
 POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
@@ -30,8 +31,114 @@ async def _poll_loop():
             found = await asyncio.to_thread(gm.poll_inbox)
             if found:
                 print(f"[poll] {found} new lead(s) stored.")
+            # Scan for confirmations in both inbox leads and sent mail
+            await asyncio.to_thread(_scan_confirmations)
         except Exception as e:
             print(f"[poll] Error: {e}")
+
+
+def _scan_confirmations():
+    """
+    Scan recent inbox leads + sent mail for appointment confirmations.
+    Runs Claude detection on qualifying threads and inserts into appointments table.
+    """
+    from ai import detect_confirmation
+    creds = gm.get_credentials()
+    if not creds:
+        return
+
+    conn = get_conn()
+    now  = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # --- Incoming leads that are confirmation candidates ---
+    recent_leads = conn.execute("""
+        SELECT id, subject, body_full, body_excerpt, gmail_thread_id, from_email, name
+        FROM leads
+        WHERE status = 'new'
+        AND gmail_thread_id IS NOT NULL
+        AND first_seen_at > datetime('now', '-7 days')
+    """).fetchall()
+
+    for lead in recent_leads:
+        lead = dict(lead)
+        subject = lead.get("subject", "")
+        body    = lead.get("body_full") or lead.get("body_excerpt") or ""
+
+        if not gm.is_confirmation_candidate(subject, body):
+            continue
+
+        # Skip if thread already tracked
+        thread_id = lead["gmail_thread_id"]
+        existing  = conn.execute(
+            "SELECT id FROM appointments WHERE thread_id=? AND status != 'deleted'",
+            (thread_id,)
+        ).fetchone()
+        if existing:
+            continue
+
+        try:
+            messages = gm.get_thread_messages(creds, thread_id)
+            data     = detect_confirmation(messages)
+            if not data:
+                continue
+            conn.execute("""
+                INSERT INTO appointments
+                  (lead_id, thread_id, detected_at, status, meeting_type,
+                   proposed_datetime, proposed_date_text, proposed_address,
+                   client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
+            """, (
+                lead["id"], thread_id, now, "pending",
+                data.get("meeting_type"), data.get("proposed_datetime"),
+                data.get("proposed_date_text"), data.get("proposed_address"),
+                data.get("client_name") or lead.get("name"),
+                data.get("client_email") or lead.get("from_email"),
+                data.get("partner_name"), data.get("context_snippet"), now, now,
+            ))
+            conn.commit()
+            print(f"[appt] Detected confirmation from inbox lead {lead['id']}: {data.get('context_snippet', '')[:60]}")
+        except Exception as e:
+            print(f"[appt] Detection error for lead {lead['id']}: {e}")
+
+    # --- Sent mail ---
+    try:
+        sent_candidates = gm.scan_sent_for_confirmations()
+        for item in sent_candidates:
+            thread_id = item["thread_id"]
+            existing  = conn.execute(
+                "SELECT id FROM appointments WHERE thread_id=? AND status != 'deleted'",
+                (thread_id,)
+            ).fetchone()
+            if existing:
+                continue
+            messages = gm.get_thread_messages(creds, thread_id)
+            data     = detect_confirmation(messages)
+            if not data:
+                continue
+            # Try to link to a lead via thread_id
+            lead_row = conn.execute(
+                "SELECT id FROM leads WHERE gmail_thread_id=?", (thread_id,)
+            ).fetchone()
+            lead_id = lead_row["id"] if lead_row else None
+            conn.execute("""
+                INSERT INTO appointments
+                  (lead_id, thread_id, detected_at, status, meeting_type,
+                   proposed_datetime, proposed_date_text, proposed_address,
+                   client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'sent',?,?)
+            """, (
+                lead_id, thread_id, now, "pending",
+                data.get("meeting_type"), data.get("proposed_datetime"),
+                data.get("proposed_date_text"), data.get("proposed_address"),
+                data.get("client_name"), data.get("client_email"),
+                data.get("partner_name"), data.get("context_snippet"), now, now,
+            ))
+            conn.commit()
+            print(f"[appt] Detected confirmation from sent mail thread {thread_id}: {data.get('context_snippet', '')[:60]}")
+    except Exception as e:
+        print(f"[appt] Sent scan error: {e}")
+
+    conn.close()
 
 
 @asynccontextmanager
@@ -48,7 +155,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 
 @app.get("/health")
 async def health():
@@ -765,6 +872,150 @@ async def save_availability(cfg: AvailabilityConfig):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+# ── Appointments ─────────────────────────────────────────────────────────────
+
+@app.get("/api/appointments")
+async def get_appointments(status: str = "pending"):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM appointments WHERE status=? ORDER BY detected_at DESC", (status,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/appointments/{appt_id}/accept")
+async def accept_appointment(appt_id: int, body: dict = None):
+    """
+    Accept an appointment: create Google Calendar event + send confirmation email.
+    body may contain: { "confirmed_datetime": "YYYY-MM-DDTHH:MM:SS" }
+    """
+    from ai import build_confirmation_email, get_agent_profile, mtype_label
+    conn = get_conn()
+    appt = conn.execute("SELECT * FROM appointments WHERE id=?", (appt_id,)).fetchone()
+    cfg  = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
+    conn.close()
+
+    if not appt:
+        return {"ok": False, "error": "Appointment not found"}
+    appt = dict(appt)
+
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail not connected"}
+
+    timezone = cfg.get("timezone", "America/Los_Angeles")
+    profile  = get_agent_profile()
+
+    # Use confirmed_datetime override if provided, else fall back to proposed
+    dt_str = (body or {}).get("confirmed_datetime") or appt.get("proposed_datetime")
+
+    # Create calendar event
+    calendar_event_id = None
+    if dt_str:
+        try:
+            summary  = f"{mtype_label(appt.get('meeting_type')).title()} — {appt.get('client_name') or appt.get('client_email', 'Client')}"
+            calendar_event_id = await asyncio.to_thread(
+                cal.create_event, creds,
+                summary, appt.get("proposed_address") or "", dt_str, timezone,
+                description=appt.get("context_snippet") or "",
+            )
+        except Exception as e:
+            print(f"[appt] Calendar event creation failed: {e}")
+
+    # Build and send confirmation email
+    email_body = build_confirmation_email(appt, profile)
+    subject    = f"Confirmed: {mtype_label(appt.get('meeting_type')).title()}"
+    now        = datetime.datetime.utcnow().isoformat() + "Z"
+
+    try:
+        to_email = appt.get("client_email") or ""
+        if to_email:
+            await asyncio.to_thread(
+                gm.send_gmail_message, creds, to_email, subject, email_body,
+                thread_id=appt.get("thread_id"),
+            )
+    except Exception as e:
+        print(f"[appt] Confirmation email send failed: {e}")
+
+    # Mark accepted + store event id
+    conn = get_conn()
+    conn.execute("""
+        UPDATE appointments
+        SET status='accepted', calendar_event_id=?, updated_at=?
+        WHERE id=?
+    """, (calendar_event_id, now, appt_id))
+    conn.commit()
+    conn.close()
+
+    return {"ok": True, "calendar_event_id": calendar_event_id}
+
+
+@app.post("/api/appointments/{appt_id}/reject")
+async def reject_appointment(appt_id: int):
+    """Reject + auto-reply: Claude drafts alternative times and saves as draft."""
+    from ai import draft_alternative_times
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute(
+        "UPDATE appointments SET status='rejected', updated_at=? WHERE id=?", (now, appt_id)
+    )
+    conn.commit()
+    conn.close()
+    try:
+        result = await asyncio.to_thread(draft_alternative_times, appt_id)
+        return {"ok": True, **result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.delete("/api/appointments/{appt_id}")
+async def delete_appointment(appt_id: int):
+    """Mark deleted. Returns thread messages + client info for compose modal."""
+    conn = get_conn()
+    appt = conn.execute("SELECT * FROM appointments WHERE id=?", (appt_id,)).fetchone()
+    if not appt:
+        conn.close()
+        return {"ok": False, "error": "Not found"}
+    appt = dict(appt)
+    now  = datetime.datetime.utcnow().isoformat() + "Z"
+    conn.execute("UPDATE appointments SET status='deleted', updated_at=? WHERE id=?", (now, appt_id))
+    conn.commit()
+    conn.close()
+
+    thread_messages = []
+    creds = gm.get_credentials()
+    if creds and appt.get("thread_id"):
+        try:
+            thread_messages = await asyncio.to_thread(
+                gm.get_thread_messages, creds, appt["thread_id"]
+            )
+        except Exception as e:
+            print(f"[appt] Thread fetch on delete: {e}")
+
+    return {
+        "ok": True,
+        "client_email": appt.get("client_email"),
+        "client_name":  appt.get("client_name"),
+        "thread_id":    appt.get("thread_id"),
+        "subject":      appt.get("context_snippet") or "Follow-up",
+        "messages":     thread_messages,
+    }
+
+
+# ── Calendar ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/calendar/events")
+async def get_calendar_events():
+    creds = gm.get_credentials()
+    if not creds:
+        return {"ok": False, "error": "Gmail/Calendar not connected", "events": []}
+    try:
+        events = await asyncio.to_thread(cal.list_upcoming_events, creds)
+        return {"ok": True, "events": events}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "events": []}
 
 
 # ── Static + SPA ──────────────────────────────────────────────────────────────

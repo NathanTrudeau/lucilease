@@ -127,6 +127,29 @@ def init_db():
             except Exception as e:
                 print(f"[db] Migration warning ({col}): {e}")
 
+    # Appointments — confirmed meetings detected from email threads
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS appointments (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id           INTEGER REFERENCES leads(id),
+            thread_id         TEXT,
+            detected_at       TEXT NOT NULL,
+            status            TEXT NOT NULL DEFAULT 'pending',
+            meeting_type      TEXT,
+            proposed_datetime TEXT,
+            proposed_date_text TEXT,
+            proposed_address  TEXT,
+            client_name       TEXT,
+            client_email      TEXT,
+            partner_name      TEXT,
+            context_snippet   TEXT,
+            calendar_event_id TEXT,
+            source            TEXT NOT NULL DEFAULT 'inbox',
+            created_at        TEXT NOT NULL,
+            updated_at        TEXT
+        )
+    """)
+
     # Open house slots — per-property recurring time windows
     cur.execute("""
         CREATE TABLE IF NOT EXISTS open_house_slots (

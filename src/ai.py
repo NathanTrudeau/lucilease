@@ -206,6 +206,214 @@ Rules:
     }
 
 
+# ── Confirmation detection ────────────────────────────────────────────────────
+
+def detect_confirmation(thread_messages: list[dict]) -> dict | None:
+    """
+    Ask Claude if this thread contains a confirmed appointment.
+    Returns extracted data dict or None if no confirmation found.
+    """
+    if not thread_messages:
+        return None
+
+    thread_text = "\n\n---\n\n".join([
+        f"From: {m['from']}\nDate: {m['date']}\n\n{m['body']}"
+        for m in thread_messages[-6:]  # last 6 messages max
+    ])
+
+    prompt = f"""Analyze this email thread. Determine if a specific meeting, showing, appointment, or phone call has been CONFIRMED by both parties — meaning both sides have agreed on a specific time.
+
+Email thread:
+{thread_text[:3000]}
+
+Respond with ONLY a JSON object, no other text:
+{{
+  "confirmed": true or false,
+  "meeting_type": "showing" | "call" | "open_house" | "coffee" | "other" | null,
+  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null,
+  "proposed_date_text": "human readable date/time string",
+  "proposed_address": "address or location string" or null,
+  "client_name": "client first/full name" or null,
+  "client_email": "client email address" or null,
+  "partner_name": "partner or spouse name if explicitly mentioned" or null,
+  "context_snippet": "one sentence summary of what was confirmed",
+  "confidence": "high" | "medium" | "low"
+}}
+
+Only set confirmed=true if there is clear mutual agreement on a specific time.
+Vague interest, questions about availability, or one-sided proposals do NOT count."""
+
+    import json
+    response = _claude().messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text = response.content[0].text.strip()
+    # Strip markdown code fences if present
+    if "```" in text:
+        text = text.split("```")[1].replace("json", "").strip()
+
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        print(f"[ai] detect_confirmation JSON parse error: {e} — raw: {text[:200]}")
+        return None
+
+    if not data.get("confirmed") or data.get("confidence") == "low":
+        return None
+
+    return data
+
+
+def draft_alternative_times(appointment_id: int) -> dict:
+    """
+    Claude drafts a reply suggesting 2-3 alternative meeting times
+    based on the agent's availability windows and the blocked proposed time.
+    Saves as a local draft and pushes to Gmail if connected.
+    """
+    import json as _json
+    import datetime as _dt
+
+    conn = get_conn()
+    appt = conn.execute("SELECT * FROM appointments WHERE id=?", (appointment_id,)).fetchone()
+    cfg  = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
+    conn.close()
+
+    if not appt:
+        raise ValueError(f"Appointment {appointment_id} not found")
+    appt = dict(appt)
+
+    profile   = get_agent_profile()
+    agent_name = profile.get("agent_name", "Your Agent")
+    timezone  = cfg.get("timezone", "America/Los_Angeles")
+    avail_raw = cfg.get("availability_windows")
+
+    avail_text = "weekdays 9am–6pm"
+    if avail_raw:
+        try:
+            windows = _json.loads(avail_raw)
+            enabled = [w for w in windows if w.get("enabled")]
+            DAY_SHORT = {"monday":"Mon","tuesday":"Tue","wednesday":"Wed",
+                         "thursday":"Thu","friday":"Fri","saturday":"Sat","sunday":"Sun"}
+            if enabled:
+                avail_text = ", ".join(
+                    f"{DAY_SHORT.get(w['day'], w['day'])} {w['start']}–{w['end']}"
+                    for w in enabled
+                )
+        except Exception:
+            pass
+
+    sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
+    signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
+    today_str   = _dt.datetime.now().strftime("%A, %B %d, %Y")
+
+    proposed = appt.get("proposed_date_text") or appt.get("proposed_datetime") or "the proposed time"
+
+    prompt = f"""You are {agent_name}, a real estate agent. The proposed meeting time doesn't work and you need to suggest alternatives.
+
+Proposed time that doesn't work: {proposed}
+Your availability ({timezone}): {avail_text}
+Today: {today_str}
+
+Write a SHORT, warm reply suggesting 2-3 SPECIFIC alternative days and times in the next 1–2 weeks that fall within your availability. Be friendly, not stiff.
+
+Rules:
+- 2–3 short paragraphs, under 100 words total
+- One brief apology for the conflict
+- Suggest 2–3 specific options like "Tuesday March 5th at 10am or Thursday March 7th at 2pm"
+- End with a simple "let me know what works" close
+- No subject line, no signature, plain text only"""
+
+    response = _claude().messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=250,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    body = response.content[0].text.strip()
+    if signature:
+        body = body + "\n\n" + signature
+
+    subject = f"Re: {(appt.get('context_snippet') or 'Our Appointment')[:60]}"
+    now     = _dt.datetime.utcnow().isoformat() + "Z"
+
+    conn = get_conn()
+    cursor = conn.execute("""
+        INSERT INTO drafts (lead_id, to_email, subject, body, created_at)
+        VALUES (?,?,?,?,?)
+    """, (appt.get("lead_id"), appt.get("client_email"), subject, body, now))
+    draft_id = cursor.lastrowid
+    conn.commit()
+
+    gmail_draft_id = None
+    creds = gm.get_credentials()
+    if creds and appt.get("client_email"):
+        try:
+            gmail_draft_id = gm.create_gmail_draft_public(
+                creds, appt["client_email"], subject, body,
+                thread_id=appt.get("thread_id"),
+            )
+            conn.execute(
+                "UPDATE drafts SET gmail_draft_id=? WHERE id=?",
+                (gmail_draft_id, draft_id)
+            )
+            conn.commit()
+        except Exception as e:
+            print(f"[ai] Gmail draft push failed for alt-times: {e}")
+    conn.close()
+
+    return {
+        "ok": True,
+        "draft_id": draft_id,
+        "gmail_draft_id": gmail_draft_id,
+        "subject": subject,
+        "body": body,
+    }
+
+
+def build_confirmation_email(appointment: dict, profile: dict) -> str:
+    """
+    Build the brief confirmation email body (no subject, no salutation header).
+    e.g. "I've scheduled you for Tuesday March 5th at 10am at 742 Anacapa St.
+    Looking forward to seeing you [and Partner]. Let me know if you have any questions."
+    """
+    name    = appointment.get("client_name") or "you"
+    partner = appointment.get("partner_name")
+    dt_text = appointment.get("proposed_date_text") or appointment.get("proposed_datetime") or "the scheduled time"
+    address = appointment.get("proposed_address")
+    mtype   = appointment.get("meeting_type", "appointment")
+
+    location_str = f" at {address}" if address else ""
+    seeing_str   = f" and {partner}" if partner else ""
+
+    body = (
+        f"I've scheduled {mtype_label(mtype)} for {dt_text}{location_str}. "
+        f"Looking forward to seeing you{seeing_str}. "
+        f"Let me know if you have any questions or concerns."
+    )
+
+    sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
+    signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
+    if signature:
+        from gmail import strip_html
+        body = body + "\n\n" + strip_html(signature)
+
+    return body
+
+
+def mtype_label(mtype: str) -> str:
+    labels = {
+        "showing":    "a showing",
+        "call":       "a call",
+        "open_house": "an open house visit",
+        "coffee":     "a coffee meeting",
+        "other":      "an appointment",
+    }
+    return labels.get(mtype or "other", "an appointment")
+
+
 # ── Gmail draft helpers ───────────────────────────────────────────────────────
 
 def _get_thread_id(creds, msg_id: str) -> Optional[str]:
