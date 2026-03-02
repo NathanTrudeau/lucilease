@@ -304,20 +304,20 @@
     /* Sort button active */
     button.sort-active { background: rgba(108,99,255,0.2); color: var(--accent2); }
 
-    /* ── [AI] tag visual treatment inside buttons ── */
-    /* Browsers render the literal text; we highlight via a wrapper span when possible.
-       For inline button text we rely on the accent color leaking through the label. */
-    button[title*="AI"] { border: 1px solid rgba(108,99,255,0.35); }
-    button[onclick*="Draft"][title*="AI"],
-    button[id*="draft-all"] {
-      background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+    /* ── [AI] button visual treatment — uses theme accent vars ── */
+    button.ai-action {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
       color: #fff;
+      border: 1px solid transparent;
+      font-weight: 600;
     }
-    button[id*="draft-all"].secondary {
-      background: rgba(108,99,255,0.12);
+    button.ai-action.secondary {
+      background: transparent;
       color: var(--accent2);
-      border: 1px solid rgba(108,99,255,0.3);
+      border: 1px solid var(--accent2);
+      font-weight: 500;
     }
+    button.ai-action:hover { opacity: 0.88; }
 
     /* ── Search bar ── */
     .tab-search {
@@ -887,7 +887,7 @@
       <div class="header-actions">
         <button class="secondary" onclick="manualPoll()" id="poll-btn">↻ Check now</button>
         <button onclick="openNewDraftModal()" title="Compose a blank email">+ New Draft</button>
-        <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Auto-generate AI drafts for all inbox leads in the background">⚡ Auto-Draft All [AI]</button>
+        <button class="secondary ai-action" id="draft-all-btn" onclick="draftAll()" title="Auto-generate AI drafts for all inbox leads in the background">⚡ Auto-Draft All [AI]</button>
         <button class="secondary" id="inbox-bulk-btn" onclick="archiveSelected()" style="display:none">📦 Archive (<span id="inbox-bulk-count">0</span>)</button>
       </div>
     </header>
@@ -1317,7 +1317,7 @@
                   <div class="actions">
                     <button class="secondary" onclick="viewEmailModal('inbox', ${l.id})">👁 View</button>
                     ${l.gmail_thread_id ? `<button class="secondary" onclick="viewThread(${l.id}, '${l.subject || ''}')">💬 Thread</button>` : ''}
-                    <button onclick="generateDraft(${l.id}, this)" title="Generate an AI reply draft for this lead">✍ Draft [AI]</button>
+                    <button class="ai-action" onclick="generateDraft(${l.id}, this)" title="Generate an AI reply draft for this lead">✍ Draft [AI]</button>
                     ${existingEmails.has(l.from_email.toLowerCase())
                       ? `<button class="success" disabled title="Already in client list">✓ In DB</button>`
                       : `<button class="success" onclick="addClient(${l.id})">+ Client</button>`}
