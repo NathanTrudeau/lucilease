@@ -871,7 +871,8 @@
       </div>
       <div class="header-actions">
         <button class="secondary" onclick="manualPoll()" id="poll-btn">↻ Check now</button>
-        <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Queue AI drafts for all inbox leads in the background">✍ Draft All</button>
+        <button onclick="openNewDraftModal()" title="Compose a blank email">+ New Draft</button>
+        <button class="secondary" id="draft-all-btn" onclick="draftAll()" title="Auto-generate AI drafts for all inbox leads in the background">⚡ Auto-Draft All</button>
         <button class="secondary" id="inbox-bulk-btn" onclick="archiveSelected()" style="display:none">📦 Archive (<span id="inbox-bulk-count">0</span>)</button>
       </div>
     </header>
@@ -1448,11 +1449,11 @@
   async function draftAll() {
     const btn = document.getElementById('draft-all-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Drafting...';
+    btn.textContent = '⏳ Auto-Drafting...';
     try {
       const r = await fetch('/api/leads?status=new');
       const leads = await r.json();
-      if (!leads.length) { btn.textContent = '✍ Draft All'; btn.disabled = false; return; }
+      if (!leads.length) { btn.textContent = '⚡ Auto-Draft All'; btn.disabled = false; return; }
       let done = 0;
       for (const lead of leads) {
         try {
@@ -1461,11 +1462,11 @@
         done++;
         btn.textContent = `⏳ ${done}/${leads.length}`;
       }
-      btn.textContent = `✓ ${done} Drafted`;
+      btn.textContent = `✓ ${done} Auto-Drafted`;
       await loadDrafts();
-      setTimeout(() => { btn.textContent = '✍ Draft All'; btn.disabled = false; }, 3000);
+      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All'; btn.disabled = false; }, 3000);
     } catch(e) {
-      btn.textContent = '✍ Draft All';
+      btn.textContent = '⚡ Auto-Draft All';
       btn.disabled = false;
     }
   }
