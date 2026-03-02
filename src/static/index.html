@@ -2795,10 +2795,30 @@
 
       const evHtml = events.map(e => {
         const time = new Date(e.start).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+
+        // Abbreviate name: "Showing — Vi Rosario" → "V.Rosario"; fallback to full summary
+        let label = e.summary || '';
+        const dashIdx = label.indexOf(' — ');
+        if (dashIdx !== -1) {
+          const type = label.slice(0, dashIdx);          // e.g. "Showing"
+          const name = label.slice(dashIdx + 3).trim();  // e.g. "Vi Rosario"
+          const parts = name.split(' ');
+          const abbr  = parts.length >= 2
+            ? `${parts[0][0]}.${parts.slice(1).join(' ')}`
+            : name;
+          label = `${type} · ${abbr}`;
+        }
+
+        // Abbreviated address: first segment before comma
+        const addr     = (e.location || '').split(',')[0].trim();
+        const addrLine = addr ? `<span style="opacity:0.8;font-size:9px;display:block;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${addr}</span>` : '';
+
+        const tooltip  = `${e.summary}${e.location ? ' · ' + e.location : ''} · ${time}`;
+        const chipBase = `font-size:10px;padding:2px 5px;border-radius:4px;display:block;margin-bottom:3px;overflow:hidden;cursor:default`;
         const tag  = e.lucilease
-          ? `style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;display:block;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${e.summary} · ${time}"`
-          : `style="background:rgba(255,255,255,0.07);color:var(--text);font-size:10px;padding:2px 5px;border-radius:4px;display:block;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default" title="${e.summary} · ${time}"`;
-        return `<span ${tag}>${time} ${e.summary}</span>`;
+          ? `style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;${chipBase}" title="${tooltip}"`
+          : `style="background:rgba(255,255,255,0.07);color:var(--text);${chipBase}" title="${tooltip}"`;
+        return `<span ${tag}><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${time} ${label}</span>${addrLine}</span>`;
       }).join('');
 
       html += `
