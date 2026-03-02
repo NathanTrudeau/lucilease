@@ -98,13 +98,14 @@ Vi""",
     next_saturday = now + datetime.timedelta(days=(5 - now.weekday() + 7) % 7 + 1)
     next_saturday = next_saturday.replace(hour=11, minute=0, second=0, microsecond=0)
 
+    now_iso = ts(days_ago=0)
     cur.execute("""
         INSERT INTO appointments (
             lead_id, thread_id, status, meeting_type,
             proposed_datetime, proposed_date_text,
             proposed_address, client_name, client_email, partner_name,
-            context_snippet, source, detected_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            context_snippet, source, detected_at, created_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         lead_a_id, thread_a, "pending", "showing",
         next_saturday.isoformat() + "Z",
@@ -114,6 +115,7 @@ Vi""",
         "Saturday at 11am works perfectly for us! Marco and I will be there.",
         "inbox",
         ts(days_ago=2, hour=14, minute=45),
+        now_iso,
     ))
 
     print(f"  ✓ Lead A inserted (id={lead_a_id}), thread={thread_a}")
@@ -168,8 +170,8 @@ Looking forward to it.
             lead_id, thread_id, status, meeting_type,
             proposed_datetime, proposed_date_text,
             proposed_address, client_name, client_email,
-            context_snippet, source, detected_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            context_snippet, source, detected_at, created_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         lead_b_id, thread_b, "pending", "showing",
         next_sunday.isoformat() + "Z",
@@ -179,6 +181,7 @@ Looking forward to it.
         "Perfect, Sunday at 2pm works great. See you then!",
         "inbox",
         ts(days_ago=3, hour=16, minute=30),
+        now_iso,
     ))
 
     print(f"  ✓ Lead B inserted (id={lead_b_id}), thread={thread_b}")

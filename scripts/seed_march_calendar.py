@@ -134,13 +134,15 @@ def main():
                 first_seen_at=(appt_dt - datetime.timedelta(days=random.randint(2, 7))).isoformat() + "Z",
             )
 
+            created = (appt_dt - datetime.timedelta(days=random.randint(1, 5))).isoformat() + "Z"
             cur.execute("""
                 INSERT INTO appointments (
                     lead_id, thread_id, status, meeting_type,
                     proposed_datetime, proposed_date_text,
                     proposed_address, client_name, client_email,
-                    context_snippet, calendar_event_id, source, detected_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    context_snippet, calendar_event_id, source,
+                    detected_at, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 lead_id,
                 f"thread_mar_{rand_id()}",
@@ -152,9 +154,10 @@ def main():
                 c_name,
                 c_email,
                 random.choice(SNIPPETS),
-                f"gcal_event_{rand_id()}",   # fake Google Calendar event id
+                f"gcal_event_{rand_id()}",
                 "inbox",
-                (appt_dt - datetime.timedelta(days=random.randint(1, 5))).isoformat() + "Z",
+                created,
+                created,
             ))
             inserted += 1
 
