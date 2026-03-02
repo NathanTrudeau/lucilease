@@ -1008,14 +1008,45 @@ async def delete_appointment(appt_id: int):
 
 @app.get("/api/calendar/events")
 async def get_calendar_events():
+    """Return merged events: accepted appointments from DB + Google Calendar (if connected)."""
+    import datetime as _dt
+
+    # Always pull accepted appointments from local DB
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM appointments WHERE status='accepted' ORDER BY proposed_datetime ASC"
+    ).fetchall()
+    conn.close()
+
+    local_events = []
+    for r in rows:
+        r = dict(r)
+        local_events.append({
+            "summary":   f"{(r.get('meeting_type') or 'Appointment').replace('_',' ').title()} — {r.get('client_name') or r.get('client_email') or 'Client'}",
+            "start":     r.get("proposed_datetime"),
+            "location":  r.get("proposed_address") or "",
+            "lucilease": True,
+            "appt_id":   r.get("id"),
+        })
+
+    # Try to merge Google Calendar events
+    gcal_events = []
     creds = gm.get_credentials()
-    if not creds:
-        return {"ok": False, "error": "Gmail/Calendar not connected", "events": []}
-    try:
-        events = await asyncio.to_thread(cal.list_upcoming_events, creds)
-        return {"ok": True, "events": events}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "events": []}
+    if creds:
+        try:
+            gcal_events = await asyncio.to_thread(cal.list_upcoming_events, creds)
+        except Exception as e:
+            print(f"[calendar] Google Calendar fetch failed: {e}")
+
+    # Merge: local first, then Google Calendar (dedup by calendar_event_id if present)
+    all_events = local_events + [e for e in gcal_events if not e.get("lucilease")]
+    # Sort by start
+    def _sort_key(e):
+        try: return e.get("start") or ""
+        except: return ""
+    all_events.sort(key=_sort_key)
+
+    return {"ok": True, "events": all_events}
 
 
 # ── Static + SPA ──────────────────────────────────────────────────────────────

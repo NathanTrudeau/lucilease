@@ -4,22 +4,19 @@ seed_appointment_threads.py — Inject realistic appointment confirmation email 
 into the Lucilease SQLite DB for testing the appointment detection pipeline.
 
 Creates two scenarios:
-  A) Thread from violettxoxo@gmail.com → full back-and-forth → CLIENT confirms.
-     Lucilease should auto-detect and create a "pending" appointment awaiting agent accept.
-  B) Thread from trudeau.nathan@gmail.com → back-and-forth → AGENT confirms.
-     Shows as accepted on dashboard (agent already said yes).
+  A) violettxoxo@gmail.com — Vi + Marco, Saturday 11am showing at 742 Anacapa.
+     Pending: client confirmed, agent needs to Accept.
+  B) trudeau.nathan@gmail.com — Sunday 2pm showing at 1405 Cliff Dr.
+     Pending: needs agent Accept.
 
 Run inside the container:
   docker exec -it lucilease python /scripts/seed_appointment_threads.py
-Or from host if DB is accessible:
-  python scripts/seed_appointment_threads.py
 """
 
 import sqlite3
 import datetime
 import random
 import string
-import sys
 import os
 
 DB_PATH = os.environ.get("DB_PATH", "/data/lucilease.db")
@@ -32,32 +29,37 @@ def ts(days_ago=0, hour=10, minute=0):
     dt = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
     return dt.isoformat() + "Z"
 
+def insert_lead(cur, *, msg_id, thread_id, from_email, name, subject,
+                body_excerpt, body_full, phone, budget=None, first_seen_at, status="new"):
+    fp = f"seed_{msg_id}"
+    cur.execute("""
+        INSERT OR IGNORE INTO leads (
+            fingerprint, gmail_msg_id, gmail_thread_id,
+            from_email, name, subject, body_excerpt, body_full,
+            phone, budget_monthly_usd, status, first_seen_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (fp, msg_id, thread_id, from_email, name, subject,
+          body_excerpt, body_full, phone, budget, status, first_seen_at))
+    return cur.lastrowid
+
 def main():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-
     now = datetime.datetime.utcnow()
 
-    # ── Scenario A: Client confirms (violettxoxo) ─────────────────────────────
-    # Thread: Vi reaches out → agent responds → Vi confirms Saturday
+    # ── Scenario A: Vi Rosario (violettxoxo) — client confirms ───────────────
     thread_a = f"thread_appt_a_{rand_id(6)}"
-    lead_a_id = None
-
     print("Creating Scenario A: violettxoxo@gmail.com — client confirms Saturday showing")
 
-    cur.execute("""
-        INSERT INTO leads (
-            gmail_message_id, gmail_thread_id, from_email, name, subject,
-            body_excerpt, body_full, phone, budget_monthly_usd,
-            first_seen_at, is_handled
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,0)
-    """, (
-        f"msg_a1_{rand_id()}", thread_a,
-        "violettxoxo@gmail.com", "Vi Rosario",
-        "Interested in 742 Anacapa St",
-        "Hi! I saw the listing for 742 Anacapa and I'd love to schedule a showing...",
-        """Hi there,
+    lead_a_id = insert_lead(cur,
+        msg_id=f"msg_a1_{rand_id()}",
+        thread_id=thread_a,
+        from_email="violettxoxo@gmail.com",
+        name="Vi Rosario",
+        subject="Interested in 742 Anacapa St",
+        body_excerpt="Hi! I saw the listing for 742 Anacapa and I'd love to schedule a showing...",
+        body_full="""Hi there,
 
 I came across your listing for 742 Anacapa St and I'm really interested — the location is perfect for me and my partner Marco.
 
@@ -67,28 +69,20 @@ Looking forward to hearing from you!
 
 Best,
 Vi""",
-        "805-555-0142", 3200,
-        ts(days_ago=4, hour=9, minute=14),
-    ))
-    lead_a_id = cur.lastrowid
+        phone="805-555-0142",
+        budget=3200,
+        first_seen_at=ts(days_ago=4, hour=9, minute=14),
+    )
 
-    # Agent reply (day 3)
-    # We simulate this as context in the thread — stored as a second "lead" row with same thread_id
-    # (In reality the agent reply comes from Gmail sent; we store it as a thread message)
-
-    # Vi's confirmation reply (day 2)
-    cur.execute("""
-        INSERT INTO leads (
-            gmail_message_id, gmail_thread_id, from_email, name, subject,
-            body_excerpt, body_full, phone,
-            first_seen_at, is_handled
-        ) VALUES (?,?,?,?,?,?,?,?,?,1)
-    """, (
-        f"msg_a3_{rand_id()}", thread_a,
-        "violettxoxo@gmail.com", "Vi Rosario",
-        "Re: Interested in 742 Anacapa St",
-        "Saturday at 11am works perfectly for us! Marco and I will be there.",
-        """Hi,
+    # Vi's confirmation reply
+    insert_lead(cur,
+        msg_id=f"msg_a3_{rand_id()}",
+        thread_id=thread_a,
+        from_email="violettxoxo@gmail.com",
+        name="Vi Rosario",
+        subject="Re: Interested in 742 Anacapa St",
+        body_excerpt="Saturday at 11am works perfectly for us! Marco and I will be there.",
+        body_full="""Hi,
 
 Saturday at 11am works perfectly for us! Marco and I will be there.
 
@@ -96,11 +90,11 @@ Saturday at 11am works perfectly for us! Marco and I will be there.
 
 Thanks so much,
 Vi""",
-        "805-555-0142",
-        ts(days_ago=2, hour=14, minute=33),
-    ))
+        phone="805-555-0142",
+        first_seen_at=ts(days_ago=2, hour=14, minute=33),
+        status="handled",
+    )
 
-    # Insert pending appointment for Scenario A
     next_saturday = now + datetime.timedelta(days=(5 - now.weekday() + 7) % 7 + 1)
     next_saturday = next_saturday.replace(hour=11, minute=0, second=0, microsecond=0)
 
@@ -123,59 +117,48 @@ Vi""",
     ))
 
     print(f"  ✓ Lead A inserted (id={lead_a_id}), thread={thread_a}")
-    print(f"  ✓ Appointment A inserted — status=pending, {next_saturday.strftime('%A %b %d at %I:%M %p')}")
+    print(f"  ✓ Appointment A — pending, {next_saturday.strftime('%A %b %d at %I:%M %p')}")
 
-    # ── Scenario B: Agent confirms (trudeau.nathan) — needs agent to accept ──
-    # Thread: Nathan's test contact reaches out about open house → agent says "yes come by Saturday 2pm" → client says "Perfect, see you then"
+    # ── Scenario B: Nathan test account — awaiting agent accept ──────────────
     thread_b = f"thread_appt_b_{rand_id(6)}"
-    lead_b_id = None
+    print("\nCreating Scenario B: trudeau.nathan@gmail.com — needs your Accept")
 
-    print("\nCreating Scenario B: trudeau.nathan@gmail.com — back-and-forth, awaiting your accept")
+    lead_b_id = insert_lead(cur,
+        msg_id=f"msg_b1_{rand_id()}",
+        thread_id=thread_b,
+        from_email="trudeau.nathan@gmail.com",
+        name="Nathan T. (test)",
+        subject="Question about 1405 Cliff Dr",
+        body_excerpt="Hey, I'm interested in 1405 Cliff Dr. Any open house slots available?",
+        body_full="""Hey,
 
-    cur.execute("""
-        INSERT INTO leads (
-            gmail_message_id, gmail_thread_id, from_email, name, subject,
-            body_excerpt, body_full, phone, budget_monthly_usd,
-            first_seen_at, is_handled
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,0)
-    """, (
-        f"msg_b1_{rand_id()}", thread_b,
-        "trudeau.nathan@gmail.com", "Nathan T. (test)",
-        "Question about 1405 Cliff Dr",
-        "Hey, I'm interested in 1405 Cliff Dr. Any open house slots available?",
-        """Hey,
-
-I've been looking at 1405 Cliff Dr on the listing — it looks incredible. Are there any open house slots available this weekend, or could we arrange a private showing?
+I've been looking at 1405 Cliff Dr — it looks incredible. Are there any open house slots available this weekend, or could we arrange a private showing?
 
 Budget is flexible, around $4,500/month if it's worth it.
 
 Cheers,
 Nathan""",
-        "805-555-0199", 4500,
-        ts(days_ago=5, hour=11, minute=2),
-    ))
-    lead_b_id = cur.lastrowid
+        phone="805-555-0199",
+        budget=4500,
+        first_seen_at=ts(days_ago=5, hour=11, minute=2),
+    )
 
-    # Simulate agent reply + client confirmation in thread
-    cur.execute("""
-        INSERT INTO leads (
-            gmail_message_id, gmail_thread_id, from_email, name, subject,
-            body_excerpt, body_full, phone,
-            first_seen_at, is_handled
-        ) VALUES (?,?,?,?,?,?,?,?,?,1)
-    """, (
-        f"msg_b3_{rand_id()}", thread_b,
-        "trudeau.nathan@gmail.com", "Nathan T. (test)",
-        "Re: Question about 1405 Cliff Dr",
-        "Perfect, Sunday at 2pm works great. See you then!",
-        """Perfect, Sunday at 2pm works great. See you then!
+    insert_lead(cur,
+        msg_id=f"msg_b3_{rand_id()}",
+        thread_id=thread_b,
+        from_email="trudeau.nathan@gmail.com",
+        name="Nathan T. (test)",
+        subject="Re: Question about 1405 Cliff Dr",
+        body_excerpt="Perfect, Sunday at 2pm works great. See you then!",
+        body_full="""Perfect, Sunday at 2pm works great. See you then!
 
 Looking forward to it.
 
 — Nathan""",
-        "805-555-0199",
-        ts(days_ago=3, hour=16, minute=20),
-    ))
+        phone="805-555-0199",
+        first_seen_at=ts(days_ago=3, hour=16, minute=20),
+        status="handled",
+    )
 
     next_sunday = now + datetime.timedelta(days=(6 - now.weekday() + 7) % 7 + 1)
     next_sunday = next_sunday.replace(hour=14, minute=0, second=0, microsecond=0)
@@ -199,17 +182,15 @@ Looking forward to it.
     ))
 
     print(f"  ✓ Lead B inserted (id={lead_b_id}), thread={thread_b}")
-    print(f"  ✓ Appointment B inserted — status=pending, {next_sunday.strftime('%A %b %d at %I:%M %p')}")
+    print(f"  ✓ Appointment B — pending, {next_sunday.strftime('%A %b %d at %I:%M %p')}")
 
     conn.commit()
     conn.close()
 
-    print("\n✅ Done! Reload Lucilease dashboard to see:")
-    print("   • Scenario A (violettxoxo): Pending appointment — Saturday 11am showing at 742 Anacapa")
-    print("     → Hit '✅ Accept [AI]' to schedule it and send Vi a confirmation email")
-    print("   • Scenario B (trudeau.nathan): Pending appointment — Sunday 2pm showing at 1405 Cliff Dr")
-    print("     → Hit '✅ Accept [AI]' to schedule it")
-    print("\n   Both show up in dashboard Recent Leads with ⏳ Pending status in the Appointment column.")
+    print("\n✅ Done! Refresh the Lucilease dashboard to see:")
+    print("   A) Vi Rosario (violettxoxo) — Saturday 11am, 742 Anacapa → click ✅ Accept [AI]")
+    print("   B) Nathan T. (test) — Sunday 2pm, 1405 Cliff Dr → click ✅ Accept [AI]")
+    print("   Both show ⏳ Pending in the Recent Leads appointment column.")
 
 if __name__ == "__main__":
     main()
