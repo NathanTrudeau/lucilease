@@ -2064,6 +2064,19 @@
     try {
       const r = await fetch(`/api/leads/${leadId}/draft`, { method: 'POST' });
       const d = await r.json();
+
+      // Thread flagged — show warning instead of drafting
+      if (d.needs_review) {
+        const flagEmoji = { angry: '😠', confusing: '🤔', off_topic: '🚫' }[d.flag] || '⚠️';
+        const flagLabel = { angry: 'Angry customer', confusing: 'Confusing thread', off_topic: 'Off-topic email' }[d.flag] || 'Flagged';
+        showToast(`${flagEmoji} ${flagLabel} — ${d.reason || 'Review before replying.'}`, true);
+        btn.disabled = false;
+        btn.textContent = `${flagEmoji} Review first`;
+        btn.style.opacity = '0.7';
+        setTimeout(() => { btn.textContent = '✍ Draft [AI]'; btn.style.opacity = ''; }, 5000);
+        return;
+      }
+
       if (!d.ok) throw new Error(d.error || 'Draft failed');
       btn.textContent = '✓ Drafted [AI]';
       showToast(d.gmail_draft_id ? '✓ [AI] Draft saved to Gmail' : '✓ [AI] Draft saved locally');

@@ -46,10 +46,48 @@ def save_agent_profile(profile: dict):
 
 # ── Draft generation ──────────────────────────────────────────────────────────
 
+def assess_thread_tone(thread_text: str) -> dict:
+    """
+    Quick Claude check: is this thread angry, confusing, or off-topic?
+    Returns {"flag": None|"angry"|"confusing"|"off_topic", "reason": str}
+    """
+    import json as _j
+    prompt = f"""Briefly assess this email or thread. Respond with ONLY a JSON object:
+{{
+  "flag": null or "angry" or "confusing" or "off_topic",
+  "reason": "one sentence explanation, or null"
+}}
+
+Set flag to:
+- "angry": customer is clearly upset, frustrated, or using hostile language
+- "confusing": thread is so unclear/jumbled that a meaningful reply is impossible  
+- "off_topic": clearly unrelated to real estate / scheduling (e.g. wrong recipient)
+- null: normal, safe to draft a reply
+
+Email/thread:
+{thread_text[:1500]}"""
+
+    try:
+        response = _claude().messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1].replace("json", "").strip()
+        return _j.loads(text)
+    except Exception as e:
+        print(f"[ai] assess_thread_tone error: {e}")
+        return {"flag": None, "reason": None}
+
+
 def draft_reply(lead_id: int) -> dict:
     """
     Generate a personalized reply for a lead using Claude Sonnet.
     Returns {"subject": str, "body": str, "gmail_draft_id": str|None}
+    If the thread is flagged as angry/confusing/off-topic, returns
+    {"flag": "angry"|"confusing"|"off_topic", "reason": str, "needs_review": True}
     """
     conn = get_conn()
     lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
@@ -132,6 +170,20 @@ def draft_reply(lead_id: int) -> dict:
 
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
     signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
+
+    # Quick tone/sanity check before drafting
+    thread_text = (lead.get("body_full") or lead.get("body_excerpt") or "").strip()
+    if thread_text:
+        tone = assess_thread_tone(thread_text)
+        if tone.get("flag"):
+            return {
+                "ok": False,
+                "flag": tone["flag"],
+                "reason": tone.get("reason") or "Thread flagged by AI — review before replying.",
+                "needs_review": True,
+                "lead_id": lead_id,
+                "subject": f"Re: {lead.get('subject') or 'Your Inquiry'}",
+            }
 
     prompt = f"""You are {agent_name}, a real estate agent{f' at {agent_company}' if agent_company else ''}.
 Tone: {agent_tone}.

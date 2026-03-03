@@ -149,23 +149,127 @@ def _save_token(creds: Credentials) -> None:
 # ── Gmail polling ─────────────────────────────────────────────────────────────
 
 # ── Housing relevance filter ──────────────────────────────────────────────────
-# Keywords that suggest a housing/real estate inquiry.
-# Any match in subject OR body passes the filter.
-# Set LUCILEASE_NO_FILTER=1 in .env to disable (accept all inbox emails).
+# ── Inbox filter ─────────────────────────────────────────────────────────────
+#
+# PHILOSOPHY: err heavily on the side of letting emails through.
+# The filter's ONLY job is blocking obvious automated/spam/newsletter mail
+# from completely unknown senders. Everything else passes.
+#
+# Set LUCILEASE_NO_FILTER=1 in .env to disable entirely.
+
+# Positive signals — any match means it's almost certainly relevant
 HOUSING_KEYWORDS = [
     "rent", "rental", "apartment", "lease", "listing", "property", "properties",
     "house", "home", "bedroom", "studio", "unit", "available", "availability",
     "showing", "tour", "move in", "move-in", "vacancy", "tenant", "landlord",
     "square feet", "sq ft", "sqft", "deposit", "pet friendly", "furnished",
     "real estate", "realty", "realtor", "for rent", "for sale", "buy", "buying",
-    "mortgage", "down payment", "open house",
+    "mortgage", "down payment", "open house", "floor plan", "sq. ft",
+    "price", "monthly", "budget", "looking for", "interested in",
 ]
 
+# Hard spam/automation signals — if any match on an unknown sender, skip it
+SPAM_SIGNALS = [
+    "unsubscribe", "opt out", "opt-out", "no-reply", "noreply",
+    "do not reply", "donotreply", "mailing list", "newsletter",
+    "subscription", "automated message", "this is an automated",
+    "out of office", "auto-reply", "autoreply", "auto reply",
+    "delivery status", "mailer-daemon", "postmaster",
+    "you are receiving this", "to stop receiving",
+    "©", "click here to unsubscribe", "manage your preferences",
+    "privacy policy", "terms of service",
+]
+
+def _extract_email_addr(raw: str) -> str:
+    """Extract bare email address from 'Name <email@x.com>' or 'email@x.com'."""
+    raw = (raw or "").strip()
+    if "<" in raw and ">" in raw:
+        return raw.split("<")[-1].replace(">", "").strip().lower()
+    return raw.lower()
+
+
+def _is_spam_or_automated(subject: str, body: str, headers: dict) -> bool:
+    """Return True if this looks like automated/newsletter/spam mail."""
+    text = ((subject or "") + " " + (body or "")[:500]).lower()
+    # Check content signals
+    if any(sig in text for sig in SPAM_SIGNALS):
+        return True
+    # Check common spam headers
+    precedence = headers.get("Precedence", "").lower()
+    if precedence in ("bulk", "list", "junk"):
+        return True
+    list_id = headers.get("List-ID") or headers.get("List-Id")
+    if list_id:
+        return True
+    auto_submitted = headers.get("Auto-Submitted", "").lower()
+    if auto_submitted and auto_submitted != "no":
+        return True
+    return False
+
+
+def should_admit_email(subject: str, body: str, headers: dict, conn) -> tuple[bool, str]:
+    """
+    Decide if an incoming email should be admitted to the Lucilease inbox.
+
+    Returns (admit: bool, reason: str)
+
+    Priority order:
+    1. LUCILEASE_NO_FILTER=1 → always admit
+    2. Automated/spam signals → always block
+    3. Reply chain (Re:) → always admit
+    4. Sender is a known lead or client → always admit
+    5. Lucilease has previously sent email to this address → always admit
+    6. Thread ID matches a tracked lead/appointment → always admit
+    7. Housing keyword present → admit
+    8. Everything else → block (unknown cold email with no housing signal)
+    """
+    if os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1":
+        return True, "filter_disabled"
+
+    # Block automated/spam mail first regardless of anything else
+    if _is_spam_or_automated(subject, body, headers):
+        return False, "spam_or_automated"
+
+    # Reply chain — always let through, Lucilease may have sent the original
+    subj_clean = (subject or "").strip().lower()
+    if subj_clean.startswith("re:") or subj_clean.startswith("fwd:"):
+        return True, "reply_chain"
+
+    from_addr = _extract_email_addr(headers.get("From", ""))
+
+    # Known lead
+    if conn.execute("SELECT 1 FROM leads WHERE lower(from_email)=? LIMIT 1", (from_addr,)).fetchone():
+        return True, "known_lead"
+
+    # Known client
+    if conn.execute("SELECT 1 FROM clients WHERE lower(email)=? LIMIT 1", (from_addr,)).fetchone():
+        return True, "known_client"
+
+    # Lucilease has previously sent an email to this address (drafts table, status=sent)
+    if conn.execute("SELECT 1 FROM drafts WHERE lower(to_email)=? AND status='sent' LIMIT 1", (from_addr,)).fetchone():
+        return True, "previously_contacted"
+
+    # Thread ID known
+    thread_id = headers.get("_thread_id")  # injected by caller if available
+    if thread_id:
+        if conn.execute("SELECT 1 FROM leads WHERE gmail_thread_id=? LIMIT 1", (thread_id,)).fetchone():
+            return True, "known_thread"
+        if conn.execute("SELECT 1 FROM appointments WHERE thread_id=? LIMIT 1", (thread_id,)).fetchone():
+            return True, "known_appointment_thread"
+
+    # Housing keyword present — cold inquiry from unknown sender
+    text = ((subject or "") + " " + (body or "")).lower()
+    if any(kw in text for kw in HOUSING_KEYWORDS):
+        return True, "housing_keyword"
+
+    return False, "no_signal"
+
+
+# Legacy shim — kept for any internal callers that haven't been updated
 def _is_housing_relevant(subject: str, body: str) -> bool:
-    """Return True if the email looks like a housing/real estate inquiry."""
+    text = ((subject or "") + " " + (body or "")).lower()
     if os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1":
         return True
-    text = ((subject or "") + " " + (body or "")).lower()
     return any(kw in text for kw in HOUSING_KEYWORDS)
 
 
@@ -306,30 +410,14 @@ def poll_inbox(label_ids: list[str] = None) -> int:
 
             subject   = headers.get("Subject", "")
             thread_id = msg.get("threadId")
-            from_addr = headers.get("From", "").lower()
+            # Inject thread_id into headers dict for should_admit_email lookup
+            headers["_thread_id"] = thread_id
 
-            # Determine if this should bypass the housing keyword filter:
-            # 1. Subject starts with "Re:" — it's a reply to something, always let through
-            # 2. Sender already exists in leads or clients table — known contact
-            # 3. Thread ID matches a tracked lead or appointment thread
-            is_reply        = subject.strip().lower().startswith("re:")
-            sender_known    = bool(conn.execute(
-                "SELECT 1 FROM leads WHERE lower(from_email)=? LIMIT 1",
-                (from_addr.split("<")[-1].replace(">","").strip(),)
-            ).fetchone()) or bool(conn.execute(
-                "SELECT 1 FROM clients WHERE lower(email)=? LIMIT 1",
-                (from_addr.split("<")[-1].replace(">","").strip(),)
-            ).fetchone())
-            thread_known    = bool(thread_id and (
-                conn.execute("SELECT 1 FROM leads WHERE gmail_thread_id=? LIMIT 1", (thread_id,)).fetchone() or
-                conn.execute("SELECT 1 FROM appointments WHERE thread_id=? LIMIT 1", (thread_id,)).fetchone()
-            ))
-
-            bypass_filter = is_reply or sender_known or thread_known
-
-            if not bypass_filter and not _is_housing_relevant(subject, body):
-                print(f"[gmail] Skipped (not housing-related): {subject!r}")
+            admit, reason = should_admit_email(subject, body, headers, conn)
+            if not admit:
+                print(f"[gmail] Filtered ({reason}): {subject!r}")
                 continue
+            print(f"[gmail] Admitted ({reason}): {subject!r}")
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
 
             # Dedup by fingerprint
