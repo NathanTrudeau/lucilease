@@ -958,18 +958,52 @@ async def delete_open_house_slot(slot_id: int):
 @app.get("/api/leads/{lead_id}/thread")
 async def get_lead_thread(lead_id: int):
     conn = get_conn()
-    lead = conn.execute("SELECT gmail_thread_id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
     conn.close()
-    if not lead or not lead["gmail_thread_id"]:
-        return {"ok": False, "error": "No thread ID for this lead"}
-    creds = gm.get_credentials()
-    if not creds:
-        return {"ok": False, "error": "Gmail not connected"}
-    try:
-        messages = await asyncio.to_thread(gm.get_thread_messages, creds, lead["gmail_thread_id"])
-        return {"ok": True, "messages": messages}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    if not lead:
+        return {"ok": False, "error": "Lead not found"}
+    lead = dict(lead)
+
+    thread_id = lead.get("gmail_thread_id")
+
+    # Try to fetch from Gmail if we have a real thread ID and credentials
+    if thread_id:
+        creds = gm.get_credentials()
+        if creds:
+            try:
+                messages = await asyncio.to_thread(gm.get_thread_messages, creds, thread_id)
+                if messages:
+                    return {"ok": True, "messages": messages, "source": "gmail"}
+            except Exception as e:
+                print(f"[thread] Gmail fetch failed for thread {thread_id}: {e} — falling back to local")
+
+    # Fallback: build thread from all leads sharing the same thread_id (or just this lead)
+    conn = get_conn()
+    if thread_id:
+        rows = conn.execute(
+            "SELECT * FROM leads WHERE gmail_thread_id=? ORDER BY first_seen_at ASC", (thread_id,)
+        ).fetchall()
+    else:
+        rows = [conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()]
+    conn.close()
+
+    messages = []
+    for r in rows:
+        if not r:
+            continue
+        r = dict(r)
+        messages.append({
+            "from":  r.get("from_email") or r.get("name") or "Unknown",
+            "date":  r.get("first_seen_at") or "",
+            "body":  r.get("body_full") or r.get("body_excerpt") or "(no content)",
+            "local": True,
+        })
+
+    if not messages:
+        body = lead.get("body_full") or lead.get("body_excerpt") or "(no content)"
+        messages = [{"from": lead.get("from_email", ""), "date": lead.get("first_seen_at", ""), "body": body, "local": True}]
+
+    return {"ok": True, "messages": messages, "source": "local"}
 
 
 # ── Availability windows + timezone (stored in config table) ──────────────────
@@ -1214,14 +1248,26 @@ async def delete_appointment(appt_id: int):
     conn.close()
 
     thread_messages = []
+    thread_id = appt.get("thread_id")
     creds = gm.get_credentials()
-    if creds and appt.get("thread_id"):
+    if creds and thread_id:
         try:
-            thread_messages = await asyncio.to_thread(
-                gm.get_thread_messages, creds, appt["thread_id"]
-            )
+            thread_messages = await asyncio.to_thread(gm.get_thread_messages, creds, thread_id)
         except Exception as e:
-            print(f"[appt] Thread fetch on delete: {e}")
+            print(f"[appt] Gmail thread fetch on delete failed ({e}) — falling back to local")
+
+    # Fallback: pull from local leads table if Gmail failed or returned nothing
+    if not thread_messages and thread_id:
+        conn2 = get_conn()
+        rows = conn2.execute(
+            "SELECT * FROM leads WHERE gmail_thread_id=? ORDER BY first_seen_at ASC", (thread_id,)
+        ).fetchall()
+        conn2.close()
+        thread_messages = [
+            {"from": dict(r).get("from_email",""), "date": dict(r).get("first_seen_at",""),
+             "body": dict(r).get("body_full") or dict(r).get("body_excerpt",""), "local": True}
+            for r in rows if r
+        ]
 
     return {
         "ok": True,
