@@ -44,8 +44,8 @@ PROPERTIES = [
 ]
 
 # ── Test leads ────────────────────────────────────────────────────────────────
-# 5 inquiries → trudeau.nathan@gmail.com
-# 5 inquiries → violettxoxo@gmail.com
+# 5 inquiries → nathan.trudeau@gmail.com
+# 5 inquiries → violettxoxo0@gmail.com
 
 LEADS = [
     # ── Trudeau inbox ─────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ LEADS = [
             "this weekend if possible. Best, Marcus"
         ),
         "budget_monthly_usd": 3200,
-        "inbox": "trudeau.nathan@gmail.com",
+        "inbox": "nathan.trudeau@gmail.com",
     },
     {
         "from_email": "priya.sharma.sb@gmail.com",
@@ -75,7 +75,7 @@ LEADS = [
             "Happy to do a video tour first. Thanks, Priya"
         ),
         "budget_monthly_usd": 4800,
-        "inbox": "trudeau.nathan@gmail.com",
+        "inbox": "nathan.trudeau@gmail.com",
     },
     {
         "from_email": "tyler.brooks.re@gmail.com",
@@ -89,7 +89,7 @@ LEADS = [
             "— Tyler"
         ),
         "budget_monthly_usd": 2400,
-        "inbox": "trudeau.nathan@gmail.com",
+        "inbox": "nathan.trudeau@gmail.com",
     },
     {
         "from_email": "sofia.reyes.home@gmail.com",
@@ -103,7 +103,7 @@ LEADS = [
             "Looking forward to hearing from you. Sofia Reyes"
         ),
         "budget_monthly_usd": 3200,
-        "inbox": "trudeau.nathan@gmail.com",
+        "inbox": "nathan.trudeau@gmail.com",
     },
     {
         "from_email": "jkowalski.sb@outlook.com",
@@ -117,7 +117,7 @@ LEADS = [
             "Do you allow 1-year leases? Thanks, James"
         ),
         "budget_monthly_usd": 4800,
-        "inbox": "trudeau.nathan@gmail.com",
+        "inbox": "nathan.trudeau@gmail.com",
     },
     # ── Violett inbox ─────────────────────────────────────────────────────────
     {
@@ -132,7 +132,7 @@ LEADS = [
             "Thanks so much, Danielle"
         ),
         "budget_monthly_usd": 2400,
-        "inbox": "violettxoxo@gmail.com",
+        "inbox": "violettxoxo0@gmail.com",
     },
     {
         "from_email": "ethan.nguyen.renter@gmail.com",
@@ -146,7 +146,7 @@ LEADS = [
             "if there's any availability. Is there a waitlist? — Ethan"
         ),
         "budget_monthly_usd": 3200,
-        "inbox": "violettxoxo@gmail.com",
+        "inbox": "violettxoxo0@gmail.com",
     },
     {
         "from_email": "c.martinez.design@gmail.com",
@@ -160,7 +160,7 @@ LEADS = [
             "Target move-in is May 1st. Please let me know next steps! Chloe"
         ),
         "budget_monthly_usd": 4800,
-        "inbox": "violettxoxo@gmail.com",
+        "inbox": "violettxoxo0@gmail.com",
     },
     {
         "from_email": "ryan.obrien.sb@gmail.com",
@@ -174,7 +174,7 @@ LEADS = [
             "Cheers, Ryan"
         ),
         "budget_monthly_usd": 2400,
-        "inbox": "violettxoxo@gmail.com",
+        "inbox": "violettxoxo0@gmail.com",
     },
     {
         "from_email": "aisha.thompson.re@gmail.com",
@@ -188,7 +188,7 @@ LEADS = [
             "Move-in: March 1st. Can we schedule a showing? Best, Aisha Thompson"
         ),
         "budget_monthly_usd": 3200,
-        "inbox": "violettxoxo@gmail.com",
+        "inbox": "violettxoxo0@gmail.com",
     },
 ]
 

@@ -81,7 +81,7 @@ def main():
     print("Scenario A: violettxoxo — confirmed showing, 742 Anacapa St (Sat 11am)")
 
     lead_a1, _ = insert_lead(cur,
-        from_email="violettxoxo@gmail.com", name="Violet",
+        from_email="violettxoxo0@gmail.com", name="Violet",
         subject="Interested in 742 Anacapa St", thread_id=thread_a,
         body="""Hi,
 
@@ -93,7 +93,7 @@ Could we schedule a showing this week? Pretty flexible on timing.
         phone="805-555-0142", budget=3200, days_ago=5, hour=9)
 
     insert_lead(cur,
-        from_email="violettxoxo@gmail.com", name="Violet",
+        from_email="violettxoxo0@gmail.com", name="Violet",
         subject="Re: Interested in 742 Anacapa St", thread_id=thread_a,
         body="""Saturday at 11am works perfectly for us! Marco and I will be there.
 
@@ -108,7 +108,7 @@ Thanks so much — Violet""",
         proposed_datetime=next_sat.isoformat() + "Z",
         proposed_date_text=next_sat.strftime("Saturday, %B %-d at 11:00 AM"),
         proposed_address="742 Anacapa St, Santa Barbara, CA",
-        client_name="Violet", client_email="violettxoxo@gmail.com", partner_name="Marco",
+        client_name="Violet", client_email="violettxoxo0@gmail.com", partner_name="Marco",
         context_snippet="Saturday at 11am works perfectly for us! Marco and I will be there.")
     print(f"  ✓ thread={thread_a} | {next_sat.strftime('%a %b %-d at %-I:%M %p')} → ✅ Accept")
 
@@ -117,7 +117,7 @@ Thanks so much — Violet""",
     print("Scenario B: violettxoxo — availability inquiry, 88 Harbor Way")
 
     lead_b1, _ = insert_lead(cur,
-        from_email="violettxoxo@gmail.com", name="Violet",
+        from_email="violettxoxo0@gmail.com", name="Violet",
         subject="88 Harbor Way — when can we view?", thread_id=thread_b,
         body="""Hello,
 
@@ -132,7 +132,7 @@ When are you available for showings? I'm free most weekday afternoons and anytim
         lead_id=lead_b1, thread_id=thread_b,
         meeting_type="availability_inquiry", status="pending",
         proposed_address="88 Harbor Way, Santa Barbara, CA",
-        client_name="Violet", client_email="violettxoxo@gmail.com",
+        client_name="Violet", client_email="violettxoxo0@gmail.com",
         context_snippet="When are you available for showings? Free weekday afternoons and weekends.")
     print(f"  ✓ thread={thread_b} | inquiry → 📅 Suggest Times")
 

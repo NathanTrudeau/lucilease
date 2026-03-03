@@ -4,9 +4,9 @@ seed_appointment_threads.py — Inject realistic appointment confirmation email 
 into the Lucilease SQLite DB for testing the appointment detection pipeline.
 
 Creates two scenarios:
-  A) violettxoxo@gmail.com — Vi + Marco, Saturday 11am showing at 742 Anacapa.
+  A) violettxoxo0@gmail.com — Vi + Marco, Saturday 11am showing at 742 Anacapa.
      Pending: client confirmed, agent needs to Accept.
-  B) trudeau.nathan@gmail.com — Sunday 2pm showing at 1405 Cliff Dr.
+  B) nathan.trudeau@gmail.com — Sunday 2pm showing at 1405 Cliff Dr.
      Pending: needs agent Accept.
 
 Run inside the container:
@@ -50,12 +50,12 @@ def main():
 
     # ── Scenario A: Vi Rosario (violettxoxo) — client confirms ───────────────
     thread_a = f"thread_appt_a_{rand_id(6)}"
-    print("Creating Scenario A: violettxoxo@gmail.com — client confirms Saturday showing")
+    print("Creating Scenario A: violettxoxo0@gmail.com — client confirms Saturday showing")
 
     lead_a_id = insert_lead(cur,
         msg_id=f"msg_a1_{rand_id()}",
         thread_id=thread_a,
-        from_email="violettxoxo@gmail.com",
+        from_email="violettxoxo0@gmail.com",
         name="Vi Rosario",
         subject="Interested in 742 Anacapa St",
         body_excerpt="Hi! I saw the listing for 742 Anacapa and I'd love to schedule a showing...",
@@ -78,7 +78,7 @@ Vi""",
     insert_lead(cur,
         msg_id=f"msg_a3_{rand_id()}",
         thread_id=thread_a,
-        from_email="violettxoxo@gmail.com",
+        from_email="violettxoxo0@gmail.com",
         name="Vi Rosario",
         subject="Re: Interested in 742 Anacapa St",
         body_excerpt="Saturday at 11am works perfectly for us! Marco and I will be there.",
@@ -111,7 +111,7 @@ Vi""",
         next_saturday.isoformat() + "Z",
         next_saturday.strftime("Saturday, %B %d at 11:00 AM"),
         "742 Anacapa St, Santa Barbara, CA",
-        "Vi Rosario", "violettxoxo@gmail.com", "Marco",
+        "Vi Rosario", "violettxoxo0@gmail.com", "Marco",
         "Saturday at 11am works perfectly for us! Marco and I will be there.",
         "inbox",
         ts(days_ago=2, hour=14, minute=45),
@@ -123,12 +123,12 @@ Vi""",
 
     # ── Scenario B: Nathan test account — awaiting agent accept ──────────────
     thread_b = f"thread_appt_b_{rand_id(6)}"
-    print("\nCreating Scenario B: trudeau.nathan@gmail.com — needs your Accept")
+    print("\nCreating Scenario B: nathan.trudeau@gmail.com — needs your Accept")
 
     lead_b_id = insert_lead(cur,
         msg_id=f"msg_b1_{rand_id()}",
         thread_id=thread_b,
-        from_email="trudeau.nathan@gmail.com",
+        from_email="nathan.trudeau@gmail.com",
         name="Nathan T. (test)",
         subject="Question about 1405 Cliff Dr",
         body_excerpt="Hey, I'm interested in 1405 Cliff Dr. Any open house slots available?",
@@ -148,7 +148,7 @@ Nathan""",
     insert_lead(cur,
         msg_id=f"msg_b3_{rand_id()}",
         thread_id=thread_b,
-        from_email="trudeau.nathan@gmail.com",
+        from_email="nathan.trudeau@gmail.com",
         name="Nathan T. (test)",
         subject="Re: Question about 1405 Cliff Dr",
         body_excerpt="Perfect, Sunday at 2pm works great. See you then!",
@@ -177,7 +177,7 @@ Looking forward to it.
         next_sunday.isoformat() + "Z",
         next_sunday.strftime("Sunday, %B %d at 2:00 PM"),
         "1405 Cliff Dr, Santa Barbara, CA",
-        "Nathan T. (test)", "trudeau.nathan@gmail.com",
+        "Nathan T. (test)", "nathan.trudeau@gmail.com",
         "Perfect, Sunday at 2pm works great. See you then!",
         "inbox",
         ts(days_ago=3, hour=16, minute=30),
