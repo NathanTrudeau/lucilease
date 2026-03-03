@@ -2552,31 +2552,48 @@
         return;
       }
 
-      const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍' };
+      const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍', availability_inquiry:'🗓️' };
 
-      container.innerHTML = appts.map(a => `
-        <div id="appt-card-${a.id}" style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--bg)">
+      container.innerHTML = appts.map(a => {
+        const isInquiry = a.meeting_type === 'availability_inquiry';
+        const typeLabel = isInquiry ? 'Availability Inquiry'
+          : (a.meeting_type || 'Appointment').replace('_',' ');
+        const badgeBg   = isInquiry ? 'rgba(56,189,248,0.15)' : 'rgba(108,99,255,0.15)';
+        const badgeColor= isInquiry ? '#38bdf8' : 'var(--accent2)';
+        const badgeText = isInquiry ? '🗓 Asking about times' : '[AI detected]';
+        const cardBorder= isInquiry ? '1px solid rgba(56,189,248,0.3)' : '1px solid var(--border)';
+
+        const actionBtns = isInquiry ? `
+          <button class="ai-action" onclick="suggestTimesAppointment(${a.id}, this)" style="width:100%">📅 Suggest Times [AI]</button>
+          <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
+        ` : `
+          <button class="ai-action" onclick="openAcceptModal(${a.id})" style="width:100%">✅ Accept [AI]</button>
+          <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">⏱ Suggest Time [AI]</button>
+          <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
+        `;
+
+        return `
+        <div id="appt-card-${a.id}" style="border:${cardBorder};border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--bg)">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:200px">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
                 <span style="font-size:16px">${mtypeIcon[a.meeting_type] || '📅'}</span>
-                <span style="font-size:13px;font-weight:600;text-transform:capitalize">${(a.meeting_type || 'Appointment').replace('_',' ')}</span>
-                <span style="font-size:10px;background:rgba(108,99,255,0.15);color:var(--accent2);padding:2px 7px;border-radius:20px">[AI detected]</span>
-                <span style="font-size:10px;color:var(--muted)">${a.source === 'sent' ? '(from your sent mail)' : '(from inbox)'}</span>
+                <span style="font-size:13px;font-weight:600;text-transform:capitalize">${typeLabel}</span>
+                <span style="font-size:10px;background:${badgeBg};color:${badgeColor};padding:2px 7px;border-radius:20px">${badgeText}</span>
+                <span style="font-size:10px;color:var(--muted)">${a.source === 'sent' ? '(from your sent mail)' : a.source === 'outgoing' ? '(from your outgoing draft)' : '(from inbox)'}</span>
               </div>
               <div style="font-size:13px;margin-bottom:4px"><strong>${a.client_name || a.client_email || '—'}</strong>${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
               <div style="font-size:12px;color:var(--accent2);margin-bottom:4px">${a.client_email || '—'}</div>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:4px">🕐 ${a.proposed_date_text || a.proposed_datetime || 'Time TBD'}</div>
+              ${!isInquiry ? `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">🕐 ${a.proposed_date_text || a.proposed_datetime || 'Time TBD'}</div>` : ''}
               ${a.proposed_address ? `<div style="font-size:12px;color:var(--muted)">📍 ${a.proposed_address}</div>` : ''}
               ${a.context_snippet ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">"${a.context_snippet}"</div>` : ''}
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;align-items:flex-end">
-              <button class="ai-action" onclick="openAcceptModal(${a.id})" style="width:100%">✅ Accept [AI]</button>
-              <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">⏱ Suggest Time [AI]</button>
-              <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
+              ${actionBtns}
             </div>
           </div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     } catch(e) {
       if (container) container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load appointments.</p></div>`;
     }
@@ -2694,6 +2711,26 @@
     }
     btn.disabled = false;
     btn.textContent = '📤 Send Confirmation';
+  }
+
+  async function suggestTimesAppointment(id, btn) {
+    if (!confirm('Claude will draft a reply offering 2–3 available time slots and save it to your Drafts. Continue?')) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ [AI] Drafting…';
+    try {
+      const r = await fetch(`/api/appointments/${id}/suggest-times`, { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) {
+        showToast('📅 Available times drafted — check Drafts tab [AI]');
+        await loadDrafts();
+      } else {
+        alert('Suggest times failed: ' + (d.error || 'unknown'));
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '📅 Suggest Times [AI]';
   }
 
   async function rejectAppointment(id, btn) {

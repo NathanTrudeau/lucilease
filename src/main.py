@@ -24,6 +24,103 @@ POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
 
 # ── Background polling ────────────────────────────────────────────────────────
 
+import re as _re
+
+_DATETIME_PATTERNS = [
+    # "Monday March 10 at 2pm", "Tuesday, March 10th at 10:30am"
+    r'\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)'
+    r'[,\s]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*'
+    r'\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm))?',
+    # "March 10 at 2pm", "March 10th at 10:30 AM"
+    r'\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}(?:st|nd|rd|th)?'
+    r'(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm))?',
+    # "3/10 at 2pm", "03/10/2026 at 10am"
+    r'\b\d{1,2}/\d{1,2}(?:/\d{2,4})?(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm))?',
+]
+
+def _body_has_datetime(text: str) -> bool:
+    """Quick regex check: does this text contain a specific date/time reference?"""
+    t = text.lower()
+    return any(_re.search(p, t, _re.IGNORECASE) for p in _DATETIME_PATTERNS)
+
+
+async def _maybe_create_outgoing_calendar_event(draft: dict, creds, now: str):
+    """
+    Background task: if an outgoing draft contains a specific date/time and
+    no appointment exists for this thread yet, create a calendar event.
+    """
+    body    = draft.get("body") or ""
+    subject = draft.get("subject") or ""
+    if not _body_has_datetime(body + " " + subject):
+        return
+
+    from ai import detect_confirmation
+    # Build a minimal thread to pass to detect_confirmation
+    fake_thread = [{"from": "agent", "date": now, "body": body}]
+    try:
+        data = await asyncio.to_thread(detect_confirmation, fake_thread)
+    except Exception as e:
+        print(f"[appt] Outgoing draft detection error: {e}")
+        return
+
+    if not data:
+        return
+
+    conn = get_conn()
+    lead_id   = draft.get("lead_id")
+    thread_id = None
+    if lead_id:
+        row = conn.execute("SELECT gmail_thread_id FROM leads WHERE id=?", (lead_id,)).fetchone()
+        if row:
+            thread_id = row["gmail_thread_id"]
+
+    if thread_id:
+        existing = conn.execute(
+            "SELECT id FROM appointments WHERE thread_id=? AND status != 'deleted'",
+            (thread_id,)
+        ).fetchone()
+        if existing:
+            conn.close()
+            return
+
+    cfg      = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
+    timezone = cfg.get("timezone", "America/Los_Angeles")
+
+    # Create calendar event
+    calendar_event_id = None
+    dt_str = data.get("proposed_datetime")
+    if dt_str:
+        try:
+            from ai import mtype_label
+            summary = f"{mtype_label(data.get('meeting_type')).title()} — {data.get('client_name') or draft.get('to_email', 'Client')}"
+            calendar_event_id = await asyncio.to_thread(
+                cal.create_event, creds,
+                summary, data.get("proposed_address") or "", dt_str, timezone,
+            )
+            print(f"[appt] ✅ Outgoing draft → calendar event created: {calendar_event_id}")
+        except Exception as e:
+            print(f"[appt] Outgoing calendar event creation failed: {e}")
+
+    conn.execute("""
+        INSERT INTO appointments
+          (lead_id, thread_id, detected_at, status, meeting_type,
+           proposed_datetime, proposed_date_text, proposed_address,
+           client_name, client_email, context_snippet,
+           calendar_event_id, source, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'outgoing',?,?)
+    """, (
+        lead_id, thread_id, now, "accepted",
+        data.get("meeting_type"), data.get("proposed_datetime"),
+        data.get("proposed_date_text"), data.get("proposed_address"),
+        data.get("client_name"), draft.get("to_email"),
+        data.get("context_snippet") or subject,
+        calendar_event_id, now, now,
+    ))
+    conn.commit()
+    conn.close()
+    print(f"[appt] Outgoing draft confirmed appointment inserted for thread {thread_id}")
+
+
 async def _poll_loop():
     while True:
         await asyncio.sleep(POLL_SECS)
@@ -39,10 +136,10 @@ async def _poll_loop():
 
 def _scan_confirmations():
     """
-    Scan recent inbox leads + sent mail for appointment confirmations.
-    Runs Claude detection on qualifying threads and inserts into appointments table.
+    Scan recent inbox leads + sent mail for appointment confirmations AND
+    availability inquiries. Inserts into appointments table as appropriate.
     """
-    from ai import detect_confirmation
+    from ai import detect_confirmation, detect_availability_inquiry
     creds = gm.get_credentials()
     if not creds:
         return
@@ -64,9 +161,6 @@ def _scan_confirmations():
         subject = lead.get("subject", "")
         body    = lead.get("body_full") or lead.get("body_excerpt") or ""
 
-        if not gm.is_confirmation_candidate(subject, body):
-            continue
-
         # Skip if thread already tracked
         thread_id = lead["gmail_thread_id"]
         existing  = conn.execute(
@@ -76,27 +170,57 @@ def _scan_confirmations():
         if existing:
             continue
 
+        is_confirmation = gm.is_confirmation_candidate(subject, body)
+        is_inquiry      = gm.is_availability_inquiry(subject, body)
+
+        if not is_confirmation and not is_inquiry:
+            continue
+
         try:
             messages = gm.get_thread_messages(creds, thread_id)
-            data     = detect_confirmation(messages)
-            if not data:
-                continue
-            conn.execute("""
-                INSERT INTO appointments
-                  (lead_id, thread_id, detected_at, status, meeting_type,
-                   proposed_datetime, proposed_date_text, proposed_address,
-                   client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
-            """, (
-                lead["id"], thread_id, now, "pending",
-                data.get("meeting_type"), data.get("proposed_datetime"),
-                data.get("proposed_date_text"), data.get("proposed_address"),
-                data.get("client_name") or lead.get("name"),
-                data.get("client_email") or lead.get("from_email"),
-                data.get("partner_name"), data.get("context_snippet"), now, now,
-            ))
-            conn.commit()
-            print(f"[appt] Detected confirmation from inbox lead {lead['id']}: {data.get('context_snippet', '')[:60]}")
+
+            # Try confirmation first (higher priority)
+            if is_confirmation:
+                data = detect_confirmation(messages)
+                if data:
+                    conn.execute("""
+                        INSERT INTO appointments
+                          (lead_id, thread_id, detected_at, status, meeting_type,
+                           proposed_datetime, proposed_date_text, proposed_address,
+                           client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
+                    """, (
+                        lead["id"], thread_id, now, "pending",
+                        data.get("meeting_type"), data.get("proposed_datetime"),
+                        data.get("proposed_date_text"), data.get("proposed_address"),
+                        data.get("client_name") or lead.get("name"),
+                        data.get("client_email") or lead.get("from_email"),
+                        data.get("partner_name"), data.get("context_snippet"), now, now,
+                    ))
+                    conn.commit()
+                    print(f"[appt] Confirmation detected — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
+                    continue  # don't double-insert as inquiry
+
+            # Availability inquiry (client asking about times/slots)
+            if is_inquiry:
+                data = detect_availability_inquiry(messages)
+                if data:
+                    conn.execute("""
+                        INSERT INTO appointments
+                          (lead_id, thread_id, detected_at, status, meeting_type,
+                           proposed_address, client_name, client_email, partner_name,
+                           context_snippet, source, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
+                    """, (
+                        lead["id"], thread_id, now, "pending",
+                        data.get("meeting_type") or "availability_inquiry",
+                        data.get("proposed_address"),
+                        data.get("client_name") or lead.get("name"),
+                        data.get("client_email") or lead.get("from_email"),
+                        data.get("partner_name"), data.get("context_snippet"), now, now,
+                    ))
+                    conn.commit()
+                    print(f"[appt] Availability inquiry detected — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
         except Exception as e:
             print(f"[appt] Detection error for lead {lead['id']}: {e}")
 
@@ -573,6 +697,10 @@ async def send_single_draft(draft_id: int):
         )
         conn2.commit()
         conn2.close()
+
+        # Background: check if this outgoing email confirms a time — create calendar event
+        asyncio.create_task(_maybe_create_outgoing_calendar_event(row, creds, now))
+
         return {"ok": True}
     except Exception as e:
         err = str(e)
@@ -1027,6 +1155,20 @@ async def send_confirmation_email(appt_id: int, body: dict = None):
     conn.close()
 
     return {"ok": True, "to_email": to_email}
+
+
+@app.post("/api/appointments/{appt_id}/suggest-times")
+async def suggest_times_appointment(appt_id: int):
+    """
+    For availability inquiries: Claude drafts a reply offering 2-3 open slots.
+    Does NOT mark the appointment as rejected — it stays pending until client confirms.
+    """
+    from ai import draft_availability_options
+    try:
+        result = await asyncio.to_thread(draft_availability_options, appt_id)
+        return {"ok": True, **result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/appointments/{appt_id}/reject")

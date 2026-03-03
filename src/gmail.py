@@ -178,10 +178,27 @@ CONFIRMATION_KEYWORDS = [
     "booked for", "i'll see you", "we're meeting", "it's a date",
 ]
 
+INQUIRY_KEYWORDS = [
+    "what time", "what times", "when are you available", "when can we",
+    "any availability", "any available", "available times", "available slots",
+    "open slots", "open times", "what days", "what day works",
+    "when works for you", "when is good for you", "schedule a showing",
+    "schedule a tour", "schedule a visit", "book a showing", "book a tour",
+    "can we see it", "can i see it", "interested in viewing",
+    "would love to see", "love to tour", "arrange a showing",
+    "set up a viewing", "set up a showing", "when can i come",
+    "when can we come", "when can we visit", "when can we see",
+]
+
 def is_confirmation_candidate(subject: str, body: str) -> bool:
     """Quick pre-filter: does this email look like a meeting confirmation?"""
     text = ((subject or "") + " " + (body or "")).lower()
     return any(kw in text for kw in CONFIRMATION_KEYWORDS)
+
+def is_availability_inquiry(subject: str, body: str) -> bool:
+    """Quick pre-filter: is the client asking about available times/slots?"""
+    text = ((subject or "") + " " + (body or "")).lower()
+    return any(kw in text for kw in INQUIRY_KEYWORDS)
 
 
 def scan_sent_for_confirmations() -> list[dict]:
