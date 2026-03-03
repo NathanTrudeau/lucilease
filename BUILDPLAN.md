@@ -163,3 +163,51 @@ lucilease/
 - Never auto-send by default. Draft-only is the safe, trusted baseline.
 - All secrets in `.env`, never committed to git.
 - SQLite file lives in the `/data` Docker volume — persists across restarts.
+
+---
+
+## Phase 5 — Production Infrastructure + Operator Layer
+_Target: skramer.lucilease.com launch by next weekend_
+
+### P5-1: Hetzner VPS + Traefik
+- Provision CX32 (~$17/mo), install Docker + Traefik
+- Wildcard `*.lucilease.com` HTTPS via Let's Encrypt
+- Each client = isolated Docker container, own SQLite volume, own subdomain
+
+### P5-2: Login Wall
+- `/login` route, bcrypt password, signed session cookie
+- Forgot-password flow via Gmail
+
+### P5-3: First-Run Wizard
+- 8 steps: Welcome → Login → Profile → Gmail → Calendar → Availability → Property → Done
+- Non-technical friendly — guides S. Kramer through full setup
+
+### P5-4: Dashboard Polish
+- Accepted Appointments section above Recent Leads
+- Calendar day view (click overflowing tile)
+
+### P5-5: RUNBOOK.md + ONBOARDING.md
+- Ops playbook for n8
+- Client onboarding guide for non-technical users
+
+### P5-6: Deploy skramer.lucilease.com
+- Onboarding call, monitor logs 2 weeks
+
+### P5-7: Luci's Operator Layer (I run this, not clients)
+- **n8's Client DB** — SQLite/Postgres table I manage:
+  - client_name, contact_email, phone, subdomain/slug, billing_tier, billing_status,
+    onboarded_at, notes, active (bool)
+- **Usage Metrics Tracking** — per-client API call counts, Gmail polls, Claude token spend
+- **Daily EOD Report** — I push a summary to n8 via Discord/email each evening:
+  - Active clients, any errors/warnings, Claude spend, emails processed, appointments created
+- **On-Demand Check-In** — n8 can ask me "how are we doing?" anytime; I pull live metrics
+- **"Mail Nathan" Button** — in any client's Lucilease UI:
+  - Pre-fills a draft describing the issue (auto-attaches error logs / recent commands)
+  - One click → lands in n8's inbox for triage
+  - Uses agent's connected Gmail to send; n8's email hardcoded as recipient
+
+### P5-8: Phase 6 Preview (post-launch)
+- 4-layer AI pipeline refactor
+- n8's client roster management (full CRM-lite for Lucilease clients)
+- Pricing enforcement ($599 CORE / $999 GROWTH / $1,999 EXECUTIVE)
+- Billing + usage dashboards
