@@ -1010,6 +1010,16 @@ async def save_availability(cfg: AvailabilityConfig):
 
 # ── Appointments ─────────────────────────────────────────────────────────────
 
+@app.delete("/api/appointments/all")
+async def clear_all_appointments():
+    """Dev/admin: wipe all appointments. Useful for clean-slate testing."""
+    conn = get_conn()
+    conn.execute("DELETE FROM appointments")
+    conn.commit()
+    conn.close()
+    return {"ok": True, "message": "All appointments cleared"}
+
+
 @app.get("/api/appointments")
 async def get_appointments(status: str = "pending"):
     conn = get_conn()

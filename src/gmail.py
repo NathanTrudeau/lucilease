@@ -430,9 +430,37 @@ def archive_gmail_message(creds, msg_id: str) -> bool:
     return True
 
 
+def get_rfc_message_id(creds, gmail_thread_id: str) -> Optional[str]:
+    """
+    Fetch the RFC Message-ID header from the LAST message in a thread.
+    Used to set In-Reply-To + References so replies thread correctly everywhere.
+    """
+    try:
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        thread  = service.users().threads().get(
+            userId="me", id=gmail_thread_id, format="metadata",
+            metadataHeaders=["Message-ID"]
+        ).execute()
+        messages = thread.get("messages", [])
+        if not messages:
+            return None
+        last_msg = messages[-1]
+        for h in last_msg.get("payload", {}).get("headers", []):
+            if h["name"].lower() == "message-id":
+                return h["value"]
+    except Exception as e:
+        print(f"[gmail] get_rfc_message_id error: {e}")
+    return None
+
+
 def send_gmail_message(creds, to: str, subject: str, body: str,
-                       thread_id=None) -> str:
-    """Send an email immediately. Returns sent message id."""
+                       thread_id=None, in_reply_to: Optional[str] = None) -> str:
+    """
+    Send an email immediately. Returns sent message id.
+    Pass thread_id to keep it in the same Gmail thread.
+    Pass in_reply_to (RFC Message-ID) to set proper reply headers.
+    If thread_id is given but in_reply_to is not, we auto-fetch the RFC id.
+    """
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     # Resolve sender address from Gmail profile so From header is correct
@@ -442,10 +470,17 @@ def send_gmail_message(creds, to: str, subject: str, body: str,
     except Exception:
         sender = "me"
 
+    # Auto-fetch RFC Message-ID for proper threading if not supplied
+    if thread_id and not in_reply_to:
+        in_reply_to = get_rfc_message_id(creds, thread_id)
+
     msg = email.mime.text.MIMEText(strip_html(body), "plain", "utf-8")
     msg["to"]      = to
     msg["from"]    = sender
     msg["subject"] = subject
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"]  = in_reply_to
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     body_dict: dict = {"raw": raw}
@@ -490,9 +525,26 @@ def create_gmail_draft_public(creds, to: str, subject: str, body: str,
 def _create_gmail_draft_impl(creds, to: str, subject: str, body: str,
                               thread_id=None) -> str:
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg = email.mime.text.MIMEText(strip_html(body))
-    msg["to"] = to
+
+    # Fetch RFC Message-ID for proper reply threading
+    in_reply_to = None
+    if thread_id:
+        in_reply_to = get_rfc_message_id(creds, thread_id)
+
+    try:
+        profile = service.users().getProfile(userId="me").execute()
+        sender  = profile.get("emailAddress", "me")
+    except Exception:
+        sender = "me"
+
+    msg = email.mime.text.MIMEText(strip_html(body), "plain", "utf-8")
+    msg["to"]      = to
+    msg["from"]    = sender
     msg["subject"] = subject
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"]  = in_reply_to
+
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     draft_body: dict = {"message": {"raw": raw}}
     if thread_id:
