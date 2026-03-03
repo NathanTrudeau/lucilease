@@ -420,13 +420,22 @@ def poll_inbox(label_ids: list[str] = None) -> int:
             print(f"[gmail] Admitted ({reason}): {subject!r}")
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
 
-            # Dedup by fingerprint
-            dup = conn.execute(
-                "SELECT id FROM leads WHERE fingerprint=?", (lead.fingerprint,)
-            ).fetchone()
-            if dup:
-                print(f"[gmail] Duplicate lead skipped: {lead.from_email}")
-                continue
+            # Fingerprint dedup ONLY for cold first-contact emails (housing_keyword reason).
+            # Replies and messages from known contacts must always be inserted —
+            # the same person can send many messages in a thread. gmail_msg_id (checked
+            # above) is the true unique key; fingerprint only guards against duplicate
+            # cold leads from the same person.
+            if reason == "housing_keyword":
+                dup = conn.execute(
+                    "SELECT id FROM leads WHERE fingerprint=?", (lead.fingerprint,)
+                ).fetchone()
+                if dup:
+                    print(f"[gmail] Duplicate cold lead skipped: {lead.from_email}")
+                    continue
+
+            # Use a per-message fingerprint for non-cold emails so the UNIQUE constraint
+            # on fingerprint doesn't block the insert
+            fp = lead.fingerprint if reason == "housing_keyword" else f"msg_{msg_id}"
 
             # Insert — store full body + thread id
             conn.execute("""
@@ -436,7 +445,7 @@ def poll_inbox(label_ids: list[str] = None) -> int:
                      first_seen_at, gmail_msg_id, gmail_thread_id)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
-                lead.fingerprint, lead.source, lead.from_email, lead.name,
+                fp, lead.source, lead.from_email, lead.name,
                 lead.phone, lead.subject, lead.body_excerpt, lead.body_full,
                 lead.budget_monthly_usd, "new", lead.first_seen_at,
                 lead.gmail_msg_id, thread_id,
