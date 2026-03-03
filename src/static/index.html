@@ -2591,12 +2591,19 @@
         const badgeText = isInquiry ? '🗓 Asking about times' : '[AI detected]';
         const cardBorder= isInquiry ? '1px solid rgba(56,189,248,0.3)' : '1px solid var(--border)';
 
+        const _tLabel = (a.client_name || a.client_email || 'thread').replace(/'/g,"&#39;");
+        const threadBtn = a.lead_id
+          ? `<button class="secondary" onclick="viewThread(${a.lead_id}, '${_tLabel}')" style="width:100%;font-size:12px">💬 View Thread</button>`
+          : '';
+
         const actionBtns = isInquiry ? `
           <button class="ai-action" onclick="suggestTimesAppointment(${a.id}, this)" style="width:100%">📅 Suggest Times [AI]</button>
+          ${threadBtn}
           <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
         ` : `
           <button class="ai-action" onclick="openAcceptModal(${a.id})" style="width:100%">✅ Accept [AI]</button>
           <button class="ai-action secondary" onclick="rejectAppointment(${a.id}, this)" style="width:100%">⏱ Suggest Time [AI]</button>
+          ${threadBtn}
           <button class="danger" onclick="deleteAppointment(${a.id})" style="width:100%;font-size:12px">🗑 Delete</button>
         `;
 
@@ -2749,7 +2756,9 @@
       const r = await fetch(`/api/appointments/${id}/suggest-times`, { method: 'POST' });
       const d = await r.json();
       if (d.ok) {
+        document.getElementById(`appt-card-${id}`)?.remove();
         showToast('📅 Available times drafted — check Drafts tab [AI]');
+        await loadAppointments();
         await loadDrafts();
       } else {
         alert('Suggest times failed: ' + (d.error || 'unknown'));

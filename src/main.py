@@ -1239,9 +1239,16 @@ async def send_confirmation_email(appt_id: int, body: dict = None):
 async def suggest_times_appointment(appt_id: int):
     """
     For availability inquiries: Claude drafts a reply offering 2-3 open slots.
-    Does NOT mark the appointment as rejected — it stays pending until client confirms.
+    Marks appointment as rejected (times suggested) so it leaves the pending dashboard.
     """
     from ai import draft_availability_options
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute(
+        "UPDATE appointments SET status='rejected', updated_at=? WHERE id=?", (now, appt_id)
+    )
+    conn.commit()
+    conn.close()
     try:
         result = await asyncio.to_thread(draft_availability_options, appt_id)
         return {"ok": True, **result}
