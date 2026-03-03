@@ -151,7 +151,7 @@ def _scan_confirmations():
     recent_leads = conn.execute("""
         SELECT id, subject, body_full, body_excerpt, gmail_thread_id, from_email, name
         FROM leads
-        WHERE status = 'new'
+        WHERE status IN ('new', 'drafted')
         AND gmail_thread_id IS NOT NULL
         AND first_seen_at > datetime('now', '-7 days')
     """).fetchall()
@@ -340,7 +340,7 @@ async def auth_status():
 async def stats():
     conn = get_conn()
     cur  = conn.cursor()
-    leads_new   = cur.execute("SELECT COUNT(*) FROM leads WHERE status='new'").fetchone()[0]
+    leads_new   = cur.execute("SELECT COUNT(*) FROM leads WHERE status IN ('new','drafted')").fetchone()[0]
     leads_total = cur.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
     clients     = cur.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
     properties  = cur.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
@@ -365,9 +365,15 @@ async def stats():
 @app.get("/api/leads")
 async def get_leads(status: str = "new"):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM leads WHERE status=? ORDER BY first_seen_at DESC", (status,)
-    ).fetchall()
+    # Inbox shows new + drafted leads (drafted = reply in progress)
+    if status == "new":
+        rows = conn.execute(
+            "SELECT * FROM leads WHERE status IN ('new','drafted') ORDER BY first_seen_at DESC"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM leads WHERE status=? ORDER BY first_seen_at DESC", (status,)
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -461,6 +467,14 @@ async def create_draft(lead_id: int):
     try:
         from ai import draft_reply
         result = await asyncio.to_thread(draft_reply, lead_id)
+        # Mark lead as 'drafted' so it moves out of raw inbox view
+        if result.get("draft_db_id"):
+            conn = get_conn()
+            conn.execute(
+                "UPDATE leads SET status='drafted' WHERE id=? AND status='new'", (lead_id,)
+            )
+            conn.commit()
+            conn.close()
         return {"ok": True, **result}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -590,6 +604,19 @@ async def delete_draft(draft_id: int):
         return {"ok": False, "error": "Not found"}
     row = dict(row)
     conn.execute("DELETE FROM drafts WHERE id=?", (draft_id,))
+
+    # If this was the last non-sent draft for a lead, revert lead status to 'new'
+    lead_id = row.get("lead_id")
+    if lead_id:
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM drafts WHERE lead_id=? AND status NOT IN ('sent','deleted')",
+            (lead_id,)
+        ).fetchone()[0]
+        if remaining == 0:
+            conn.execute(
+                "UPDATE leads SET status='new' WHERE id=? AND status='drafted'", (lead_id,)
+            )
+
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -695,6 +722,13 @@ async def send_single_draft(draft_id: int):
             "UPDATE drafts SET status='sent', error_msg=NULL, updated_at=? WHERE id=?",
             (now, draft_id)
         )
+        # Mark lead as 'replied' — moves it out of inbox and drafted views
+        lead_id = row.get("lead_id")
+        if lead_id:
+            conn2.execute(
+                "UPDATE leads SET status='replied', handled_at=? WHERE id=?",
+                (now, lead_id)
+            )
         conn2.commit()
         conn2.close()
 

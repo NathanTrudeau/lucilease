@@ -304,13 +304,25 @@ def poll_inbox(label_ids: list[str] = None) -> int:
             headers     = {h["name"]: h["value"] for h in headers_raw}
             body        = _extract_body(msg["payload"])
 
-            # Skip non-housing emails
-            subject = headers.get("Subject", "")
-            if not _is_housing_relevant(subject, body):
+            subject   = headers.get("Subject", "")
+            thread_id = msg.get("threadId")
+
+            # Allow replies on existing tracked threads to bypass housing filter
+            # (a client replying "Saturday works!" shouldn't be filtered out)
+            thread_in_db = False
+            if thread_id:
+                existing_thread = conn.execute(
+                    "SELECT id FROM leads WHERE gmail_thread_id=? LIMIT 1", (thread_id,)
+                ).fetchone()
+                if not existing_thread:
+                    existing_thread = conn.execute(
+                        "SELECT id FROM appointments WHERE thread_id=? LIMIT 1", (thread_id,)
+                    ).fetchone()
+                thread_in_db = existing_thread is not None
+
+            if not thread_in_db and not _is_housing_relevant(subject, body):
                 print(f"[gmail] Skipped (not housing-related): {subject!r}")
                 continue
-
-            thread_id = msg.get("threadId")
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
 
             # Dedup by fingerprint

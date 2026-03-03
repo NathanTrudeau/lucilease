@@ -943,7 +943,7 @@
         <p id="header-date">—</p>
       </div>
       <div class="header-actions">
-        <button class="secondary" onclick="refreshAll()">↻ Refresh</button>
+        <button class="secondary" id="refresh-all-btn" onclick="pollAndRefresh(this)">↻ Refresh</button>
       </div>
     </header>
     <div class="content">
@@ -1460,9 +1460,12 @@
           </tr></thead>
           <tbody>
             ${leads.map(l => `
-              <tr id="lead-row-${l.id}">
+              <tr id="lead-row-${l.id}" style="${l.status === 'drafted' ? 'opacity:0.75' : ''}">
                 <td><input type="checkbox" class="lead-checkbox" data-id="${l.id}" onchange="updateBulkBtn('leads')"></td>
-                <td>${l.name || '—'}</td>
+                <td>
+                  ${l.status === 'drafted' ? `<span style="font-size:9px;background:rgba(56,189,248,0.15);color:#38bdf8;padding:1px 5px;border-radius:8px;display:block;margin-bottom:2px">✍ Drafted</span>` : ''}
+                  ${l.name || '—'}
+                </td>
                 <td><a href="mailto:${l.from_email}" style="color:var(--accent2)">${l.from_email}</a></td>
                 <td>${l.phone || '—'}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -1551,20 +1554,25 @@
     }
   }
 
-  async function manualPoll() {
-    const btn = document.getElementById('poll-btn');
-    btn.disabled = true;
-    btn.textContent = 'Checking...';
+  async function pollAndRefresh(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking Gmail…'; }
     try {
       const r = await fetch('/api/poll', { method: 'POST' });
       const d = await r.json();
-      btn.textContent = `↻ Check now (${d.new_leads} new)`;
-      await loadLeads();
-      await refreshStats();
+      await refreshAll();
+      if (btn) btn.textContent = d.new_leads > 0 ? `↻ Refresh (${d.new_leads} new!)` : '↻ Refresh';
     } catch(e) {
-      btn.textContent = '↻ Check now';
+      if (btn) btn.textContent = '↻ Refresh';
     }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
+    // Reset label after 4s
+    if (btn) setTimeout(() => { btn.textContent = '↻ Refresh'; }, 4000);
+  }
+
+  async function manualPoll() {
+    const btn = document.getElementById('poll-btn');
+    await pollAndRefresh(btn);
+    if (btn) btn.textContent = btn.textContent.replace('⏳ Checking Gmail…','↻ Check now');
   }
 
   // ── Unified multi-select bulk system ─────────────────────────────────────
@@ -2029,7 +2037,7 @@
   }
 
   async function refreshAll() {
-    await Promise.all([checkAuth(), refreshStats()]);
+    await Promise.all([checkAuth(), refreshStats(), loadLeads(), loadDrafts(), loadSent(), loadArchive(), loadAppointments()]);
   }
 
   // ── Poll interval display ─────────────────────────────────────────────────
