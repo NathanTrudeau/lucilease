@@ -103,10 +103,38 @@ def get_credentials() -> Optional[Credentials]:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             _save_token(creds)
-        return creds if creds.valid else None
+        if not creds.valid:
+            return None
+        return creds
     except Exception as e:
         print(f"[gmail] Credential error: {e}")
         return None
+
+
+def get_granted_scopes() -> list[str]:
+    """Return the scopes actually granted in the stored token (not just requested)."""
+    if not TOKEN_FILE.exists():
+        return []
+    try:
+        import json
+        data = json.loads(TOKEN_FILE.read_text())
+        raw = data.get("scopes") or data.get("scope") or ""
+        if isinstance(raw, list):
+            return raw
+        return raw.split() if raw else []
+    except Exception:
+        return []
+
+
+def check_scopes_ok() -> dict:
+    """
+    Verify the stored token has all required scopes.
+    Returns {"ok": bool, "missing": [...], "granted": [...]}.
+    """
+    granted = set(get_granted_scopes())
+    required = set(SCOPES)
+    missing  = required - granted
+    return {"ok": len(missing) == 0, "missing": list(missing), "granted": list(granted)}
 
 
 def is_authenticated() -> bool:
@@ -389,14 +417,27 @@ def send_gmail_message(creds, to: str, subject: str, body: str,
                        thread_id=None) -> str:
     """Send an email immediately. Returns sent message id."""
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg = email.mime.text.MIMEText(strip_html(body))
-    msg["to"] = to
+
+    # Resolve sender address from Gmail profile so From header is correct
+    try:
+        profile = service.users().getProfile(userId="me").execute()
+        sender  = profile.get("emailAddress", "me")
+    except Exception:
+        sender = "me"
+
+    msg = email.mime.text.MIMEText(strip_html(body), "plain", "utf-8")
+    msg["to"]      = to
+    msg["from"]    = sender
     msg["subject"] = subject
+
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     body_dict: dict = {"raw": raw}
     if thread_id:
         body_dict["threadId"] = thread_id
+
+    print(f"[gmail] Sending email → {to} | subject: {subject!r} | thread: {thread_id or 'none'} | from: {sender}")
     result = service.users().messages().send(userId="me", body=body_dict).execute()
+    print(f"[gmail] ✅ Sent OK — message id: {result.get('id')}")
     return result["id"]
 
 

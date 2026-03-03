@@ -1354,11 +1354,23 @@
         text.textContent = 'Gmail connected';
         btn.innerHTML    = `<button class="danger" onclick="disconnectGmail()">Disconnect</button>
                             <a class="btn secondary" href="/auth/gmail" style="margin-left:8px">Swap account</a>`;
-        banner.innerHTML = '';
         // Fetch account email
         const ar = await fetch('/api/gmail-account');
         const ad = await ar.json();
         if (ad.email) acctEl.textContent = ad.email;
+
+        // Scope check — warn if token is missing permissions (e.g. re-auth needed)
+        if (!d.scopes_ok && d.missing_scopes && d.missing_scopes.length) {
+          const missing = d.missing_scopes.map(s => s.split('/').pop()).join(', ');
+          banner.innerHTML = `
+            <div class="banner warn" style="margin-top:10px">
+              ⚠️ <strong>Gmail permissions need updating.</strong>
+              Your token is missing: <code>${missing}</code>.<br>
+              <a href="/auth/gmail" style="font-weight:600">Re-connect Gmail →</a> to fix sending and calendar features.
+            </div>`;
+        } else {
+          banner.innerHTML = '';
+        }
       } else {
         dot.className    = 'status-dot offline';
         text.textContent = 'Gmail not connected';

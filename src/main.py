@@ -201,7 +201,13 @@ async def auth_callback(
 
 @app.get("/auth/status")
 async def auth_status():
-    return {"authenticated": gm.is_authenticated()}
+    scope_check = gm.check_scopes_ok()
+    return {
+        "authenticated": gm.is_authenticated(),
+        "scopes_ok":     scope_check["ok"],
+        "missing_scopes": scope_check["missing"],
+        "granted_scopes": scope_check["granted"],
+    }
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
