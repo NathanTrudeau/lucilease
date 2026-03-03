@@ -306,21 +306,28 @@ def poll_inbox(label_ids: list[str] = None) -> int:
 
             subject   = headers.get("Subject", "")
             thread_id = msg.get("threadId")
+            from_addr = headers.get("From", "").lower()
 
-            # Allow replies on existing tracked threads to bypass housing filter
-            # (a client replying "Saturday works!" shouldn't be filtered out)
-            thread_in_db = False
-            if thread_id:
-                existing_thread = conn.execute(
-                    "SELECT id FROM leads WHERE gmail_thread_id=? LIMIT 1", (thread_id,)
-                ).fetchone()
-                if not existing_thread:
-                    existing_thread = conn.execute(
-                        "SELECT id FROM appointments WHERE thread_id=? LIMIT 1", (thread_id,)
-                    ).fetchone()
-                thread_in_db = existing_thread is not None
+            # Determine if this should bypass the housing keyword filter:
+            # 1. Subject starts with "Re:" — it's a reply to something, always let through
+            # 2. Sender already exists in leads or clients table — known contact
+            # 3. Thread ID matches a tracked lead or appointment thread
+            is_reply        = subject.strip().lower().startswith("re:")
+            sender_known    = bool(conn.execute(
+                "SELECT 1 FROM leads WHERE lower(from_email)=? LIMIT 1",
+                (from_addr.split("<")[-1].replace(">","").strip(),)
+            ).fetchone()) or bool(conn.execute(
+                "SELECT 1 FROM clients WHERE lower(email)=? LIMIT 1",
+                (from_addr.split("<")[-1].replace(">","").strip(),)
+            ).fetchone())
+            thread_known    = bool(thread_id and (
+                conn.execute("SELECT 1 FROM leads WHERE gmail_thread_id=? LIMIT 1", (thread_id,)).fetchone() or
+                conn.execute("SELECT 1 FROM appointments WHERE thread_id=? LIMIT 1", (thread_id,)).fetchone()
+            ))
 
-            if not thread_in_db and not _is_housing_relevant(subject, body):
+            bypass_filter = is_reply or sender_known or thread_known
+
+            if not bypass_filter and not _is_housing_relevant(subject, body):
                 print(f"[gmail] Skipped (not housing-related): {subject!r}")
                 continue
             lead = parse_email_to_lead(headers, body, msg_id=msg_id)
