@@ -1237,21 +1237,21 @@
         <button class="secondary" onclick="loadCalendarEvents()" style="margin-left:6px">↻ Refresh</button>
       </div>
     </header>
-    <div class="content">
-      <div class="panel" style="padding:0">
-        <!-- Day-of-week header -->
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border)">
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Sun</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Mon</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Tue</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Wed</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Thu</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted);border-right:1px solid var(--border)">Fri</div>
-          <div style="padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:var(--muted)">Sat</div>
-        </div>
-        <div id="calendar-container" style="overflow-y:auto">
-          <div class="empty-state"><div class="icon">📅</div><p>Loading…</p></div>
-        </div>
+    <!-- Calendar fills the rest of the viewport — no scrolling content wrapper -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;border-top:1px solid var(--border)">
+      <!-- Day-of-week header -->
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface)">
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Sun</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Mon</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Tue</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Wed</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Thu</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid var(--border)">Fri</div>
+        <div style="padding:10px 0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Sat</div>
+      </div>
+      <!-- Grid fills remaining height -->
+      <div id="calendar-container" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+        <div class="empty-state"><div class="icon">📅</div><p>Loading…</p></div>
       </div>
     </div>
   </div>
@@ -3115,8 +3115,10 @@
     const firstDay  = new Date(_calYear, _calMonth, 1).getDay(); // 0=Sun
     const daysInMo  = new Date(_calYear, _calMonth + 1, 0).getDate();
     const totalCells = Math.ceil((firstDay + daysInMo) / 7) * 7;
+    const numRows = totalCells / 7;
 
-    let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr)">`;
+    // Grid fills the container height with equal-height rows
+    let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat(${numRows},1fr);height:100%;width:100%">`;
 
     for (let i = 0; i < totalCells; i++) {
       const dayNum  = i - firstDay + 1;
@@ -3170,19 +3172,37 @@
         return `<span ${tag}><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${time} ${label}</span>${addrLine}</span>`;
       }).join('');
 
-      // Encode date for onclick
+      const col = i % 7; // 0=Sun … 6=Sat
+      const isLastCol = col === 6;
+      const isLastRow = i >= totalCells - 7;
+
       const cellDateISO = inMonth ? `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}` : '';
-      const clickable = inMonth ? `onclick="openDayView('${cellDateISO}')" style="cursor:pointer"` : '';
+      const clickHandler = inMonth ? `onclick="openDayView('${cellDateISO}')"` : '';
+      const cursor = inMonth ? 'cursor:pointer;' : '';
 
       html += `
-        <div ${clickable} style="min-height:140px;height:calc((100vh - 230px) / ${Math.ceil(totalCells/7)});padding:8px 6px 6px 8px;background:${bg};${todayBorderLeft}${borderRight};${borderBottom};vertical-align:top;position:relative;box-sizing:border-box;overflow:hidden;transition:background 0.15s">
-          <div style="font-size:13px;font-weight:${dayWeight};color:${dayColor};margin-bottom:5px;${isToday ? 'background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;' : ''}">
-            ${inMonth ? dayNum : ''}
+        <div ${clickHandler} style="
+          ${cursor}
+          padding:8px 7px 6px 9px;
+          background:${bg};
+          ${todayBorderLeft}
+          ${isLastCol ? '' : 'border-right:1px solid var(--border);'}
+          ${isLastRow ? '' : 'border-bottom:1px solid var(--border);'}
+          position:relative;
+          overflow:hidden;
+          transition:background 0.12s;
+          min-height:0;
+        ">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px">
+            <div style="
+              font-size:12px;font-weight:${dayWeight};color:${dayColor};
+              ${isToday ? 'background:var(--accent);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:700;' : ''}
+            ">${inMonth ? dayNum : ''}</div>
+            ${isToday ? `<span style="font-size:9px;color:var(--accent);font-weight:700;letter-spacing:0.6px;text-transform:uppercase">Today</span>` : ''}
           </div>
-          ${isToday ? `<div style="font-size:9px;color:var(--accent);font-weight:700;letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase">Today</div>` : ''}
-          ${evHtml}
-          ${isCurWeek && !isToday ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:var(--accent);opacity:0.45">this week</div>` : ''}
-          ${isNxtWeek ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:#38bdf8;opacity:0.45">next week</div>` : ''}
+          <div style="overflow:hidden">${evHtml}</div>
+          ${isCurWeek && !isToday ? `<div style="position:absolute;bottom:3px;right:5px;font-size:8px;color:var(--accent);opacity:0.5;pointer-events:none">this week</div>` : ''}
+          ${isNxtWeek ? `<div style="position:absolute;bottom:3px;right:5px;font-size:8px;color:#38bdf8;opacity:0.5;pointer-events:none">next week</div>` : ''}
         </div>`;
     }
 
