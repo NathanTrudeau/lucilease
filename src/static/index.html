@@ -459,6 +459,42 @@
       overflow-y: auto;
       color: var(--text);
     }
+
+    /* ── Quick actions bar ── */
+    .quick-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    /* ── Accepted appt row ── */
+    .accepted-appt-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .accepted-appt-row:last-child { border-bottom: none; }
+    .accepted-appt-row:hover { background: rgba(255,255,255,0.02); }
+
+    /* ── Skeleton loader ── */
+    @keyframes shimmer { 0%{opacity:0.4} 50%{opacity:0.8} 100%{opacity:0.4} }
+    .skeleton {
+      background: var(--border);
+      border-radius: 4px;
+      animation: shimmer 1.4s infinite;
+      display: inline-block;
+    }
+
+    /* ── Calendar today strong highlight ── */
+    .cal-today-cell {
+      background: rgba(108,99,255,0.18) !important;
+      border-left: 3px solid var(--accent) !important;
+    }
   </style>
 </head>
 <body>
@@ -831,6 +867,17 @@
   </div>
 </div>
 
+<!-- ── Calendar Day View Modal ── -->
+<div class="modal-overlay" id="day-view-modal">
+  <div class="modal" style="width:580px">
+    <h3 id="day-view-title">📅 —</h3>
+    <div id="day-view-events" style="display:flex;flex-direction:column;gap:10px;max-height:480px;overflow-y:auto;padding-right:4px"></div>
+    <div class="modal-footer">
+      <button class="secondary" onclick="closeModal('day-view-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Theme Picker Modal ── -->
 <div class="modal-overlay" id="theme-modal">
   <div class="modal" style="width:480px">
@@ -943,18 +990,28 @@
         <p id="header-date">—</p>
       </div>
       <div class="header-actions">
-        <button class="secondary" id="refresh-all-btn" onclick="pollAndRefresh(this)">↻ Refresh</button>
+        <button class="secondary" id="refresh-all-btn" onclick="pollAndRefresh(this)">↻ Refresh Gmail</button>
       </div>
     </header>
     <div class="content">
 
       <div id="gmail-banner"></div>
 
+      <!-- Quick Actions -->
+      <div class="quick-actions">
+        <button class="ai-action" onclick="draftAll()" title="Auto-generate AI replies for all new inbox leads">⚡ Auto-Draft All [AI]</button>
+        <button class="secondary" onclick="openNewDraftModal()">+ New Draft</button>
+        <button class="secondary" onclick="goToPage('inbox')">📬 Inbox</button>
+        <button class="secondary" onclick="goToPage('calendar')">📅 Calendar</button>
+        <button class="secondary" onclick="goToPage('clients')">👥 Clients</button>
+      </div>
+
+      <!-- Stats -->
       <div class="stats">
         <div class="stat-card">
           <div class="label">New Leads</div>
           <div class="value" id="stat-leads-new">—</div>
-          <div class="sub">Awaiting review</div>
+          <div class="sub" id="stat-leads-new-sub">Awaiting review</div>
         </div>
         <div class="stat-card">
           <div class="label">Total Leads</div>
@@ -973,6 +1030,17 @@
         </div>
       </div>
 
+      <!-- Confirmed Appointments (accepted) -->
+      <div class="panel" id="accepted-appt-panel" style="margin-bottom:16px">
+        <div class="panel-header">
+          ✅ Confirmed Appointments
+          <span id="accepted-appt-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        </div>
+        <div id="accepted-appt-container">
+          <div class="empty-state" style="padding:16px"><p style="color:var(--muted);font-size:12px">No confirmed appointments yet.</p></div>
+        </div>
+      </div>
+
       <!-- Pending Appointments -->
       <div class="panel" id="appt-dashboard-panel" style="margin-bottom:16px">
         <div class="panel-header">
@@ -984,10 +1052,11 @@
         </div>
       </div>
 
+      <!-- Recent Leads -->
       <div class="panel">
         <div class="panel-header">
           Recent Leads
-          <button class="secondary" onclick="showPage('inbox', document.querySelector('nav a:nth-child(2)'))">View all →</button>
+          <button class="secondary" onclick="goToPage('inbox')">View all →</button>
         </div>
         <div id="recent-leads-container">
           <div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>
@@ -1507,32 +1576,56 @@
     }
     el.innerHTML = `
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Subject</th><th>Budget</th><th>Received</th><th>Appointment</th></tr></thead>
+        <thead><tr><th>Name</th><th>Subject</th><th>Status</th><th>Appointment</th><th style="text-align:right">Actions</th></tr></thead>
         <tbody>
           ${leads.map(l => {
-            // Find any non-deleted appointment linked to this lead
+            // Appointment status cell
             const appt = _appointmentsCache.find(a => a.lead_id === l.id && a.status !== 'deleted');
-            let apptCell = '<span style="color:var(--muted);font-size:11px">—</span>';
+            let apptCell = '<span style="color:var(--border);font-size:11px">—</span>';
             if (appt) {
               if (appt.status === 'accepted') {
                 const dt = appt.proposed_datetime
                   ? new Date(appt.proposed_datetime).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
                   : appt.proposed_date_text || 'Scheduled';
-                apptCell = `<span style="font-size:11px;color:#4ade80;font-weight:600">✅ ${dt}</span>`;
+                apptCell = `<span style="font-size:11px;color:var(--green);font-weight:600">✅ ${dt}</span>`;
               } else if (appt.status === 'pending') {
                 apptCell = `<span style="font-size:11px;background:rgba(108,99,255,0.18);color:var(--accent2);padding:2px 7px;border-radius:10px">⏳ Pending</span>`;
               } else if (appt.status === 'rejected') {
-                apptCell = `<span style="font-size:11px;color:var(--muted)">↩ Alt times sent</span>`;
+                apptCell = `<span style="font-size:11px;color:var(--muted)">↩ Times sent</span>`;
               }
             }
+            // Lead status badge
+            const isDrafted = l.status === 'drafted';
+            const statusBadge = isDrafted
+              ? `<span style="font-size:10px;background:rgba(167,139,250,0.15);color:var(--accent2);padding:1px 7px;border-radius:10px">✍ Drafted</span>`
+              : `<span style="font-size:10px;background:rgba(108,99,255,0.2);color:var(--accent2);padding:1px 7px;border-radius:10px">New</span>`;
+
+            // Inline action buttons
+            const hasDraft = isDrafted;
+            const draftBtn = !hasDraft
+              ? `<button class="secondary ai-action" onclick="generateDraft(${l.id}, this)" style="font-size:11px;padding:4px 9px" title="AI draft reply">✍ Draft [AI]</button>`
+              : `<button class="secondary" onclick="goToPage('drafts')" style="font-size:11px;padding:4px 9px" title="View in drafts">📋 View Draft</button>`;
+            const viewBtn = `<button class="secondary" onclick="viewEmailModal('inbox',${l.id})" style="font-size:11px;padding:4px 9px">👁 View</button>`;
+            const threadBtn = l.gmail_thread_id
+              ? `<button class="secondary" onclick="viewThread(${l.id},'${(l.subject||'').replace(/'/g,"\\'")}'); " style="font-size:11px;padding:4px 9px">💬 Thread</button>`
+              : '';
+
             return `
-            <tr>
-              <td>${l.name || '—'}</td>
-              <td style="color:var(--accent2)">${l.from_email}</td>
-              <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.subject || '—'}</td>
-              <td>${l.budget_monthly_usd ? '$' + l.budget_monthly_usd.toLocaleString() + '/mo' : '—'}</td>
-              <td style="color:var(--muted);font-size:12px">${formatDate(l.first_seen_at)}</td>
+            <tr id="lead-row-dash-${l.id}" style="${isDrafted ? 'opacity:0.65' : ''}">
+              <td>
+                <div style="font-weight:500;font-size:13px">${l.name || '—'}</div>
+                <div style="font-size:11px;color:var(--accent2)">${l.from_email}</div>
+              </td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)">${l.subject || '—'}</td>
+              <td>${statusBadge}</td>
               <td>${apptCell}</td>
+              <td>
+                <div class="actions" style="justify-content:flex-end">
+                  ${draftBtn}
+                  ${viewBtn}
+                  ${threadBtn}
+                </div>
+              </td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -1838,7 +1931,7 @@
     container.innerHTML = `
       <table class="tight">
         <thead><tr>
-          <th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Notes</th><th>Added</th><th></th>
+          <th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Leads</th><th>Notes</th><th>Added</th><th></th>
         </tr></thead>
         <tbody>
           ${clients.map(c => {
@@ -1850,6 +1943,14 @@
               <td><a href="mailto:${c.email}" style="color:var(--accent2);font-size:12px">${c.email || '—'}</a></td>
               <td style="font-size:12px;white-space:nowrap">${c.phone || '—'}</td>
               <td>${statusTag(c.status)}</td>
+              <td style="text-align:center">
+                ${(() => {
+                  const count = _leadsCache.filter(l => l.from_email && c.email && l.from_email.toLowerCase() === c.email.toLowerCase()).length;
+                  return count > 0
+                    ? `<span style="font-size:12px;font-weight:600;color:var(--accent2);cursor:pointer" onclick="goToPage('inbox')" title="View in inbox">${count} 📬</span>`
+                    : `<span style="color:var(--border);font-size:12px">—</span>`;
+                })()}
+              </td>
               <td class="notes-cell">
                 ${notePreview || '<span style="color:var(--border)">—</span>'}
                 ${notes.length > 45 ? `<button class="secondary" onclick="viewNotes('${c.name.replace(/'/g,"\\'")}', \`${notes.replace(/`/g,'\\`')}\`)" style="font-size:10px;padding:2px 6px;margin-left:4px">View</button>` : ''}
@@ -2036,8 +2137,16 @@
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  // Navigate to a page by name, updating the sidebar active state
+  function goToPage(name) {
+    const pageNames = ['dashboard','inbox','drafts','clients','properties','sent','archive','calendar','settings'];
+    const links = document.querySelectorAll('nav a');
+    const idx = pageNames.indexOf(name);
+    showPage(name, idx >= 0 ? links[idx] : null);
+  }
+
   async function refreshAll() {
-    await Promise.all([checkAuth(), refreshStats(), loadLeads(), loadDrafts(), loadSent(), loadArchive(), loadAppointments()]);
+    await Promise.all([checkAuth(), refreshStats(), loadLeads(), loadDrafts(), loadSent(), loadArchive(), loadAppointments(), loadAcceptedAppointments()]);
   }
 
   // ── Poll interval display ─────────────────────────────────────────────────
@@ -2086,7 +2195,19 @@
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
+  // ── Toast queue ───────────────────────────────────────────────────────────
+  const _toastQueue = [];
+  let _toastActive = false;
+
   function showToast(msg, isError = false) {
+    _toastQueue.push({ msg, isError });
+    if (!_toastActive) _drainToastQueue();
+  }
+
+  function _drainToastQueue() {
+    if (!_toastQueue.length) { _toastActive = false; return; }
+    _toastActive = true;
+    const { msg, isError } = _toastQueue.shift();
     let toast = document.getElementById('luci-toast');
     if (!toast) {
       toast = document.createElement('div');
@@ -2096,14 +2217,18 @@
         background:var(--surface);border:1px solid var(--border);
         color:var(--text);padding:12px 20px;border-radius:10px;
         font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.4);
-        transition:opacity 0.3s;pointer-events:none;`;
+        transition:opacity 0.35s;pointer-events:none;max-width:340px;
+        white-space:pre-line;line-height:1.5;`;
       document.body.appendChild(toast);
     }
     toast.style.color = isError ? 'var(--red)' : 'var(--green)';
     toast.textContent = msg;
     toast.style.opacity = '1';
     clearTimeout(toast._timeout);
-    toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+    toast._timeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(_drainToastQueue, 380);
+    }, 3200);
   }
 
   // ── Tab search / filter ───────────────────────────────────────────────────
@@ -2634,6 +2759,62 @@
     }
   }
 
+  // ── Confirmed (accepted) appointments on dashboard ────────────────────────
+  async function loadAcceptedAppointments() {
+    const container = document.getElementById('accepted-appt-container');
+    const countEl   = document.getElementById('accepted-appt-count');
+    if (!container) return;
+    try {
+      const r = await fetch('/api/appointments?status=accepted');
+      const appts = await r.json();
+      const now = new Date();
+
+      // Sort soonest first; split into upcoming vs past
+      const upcoming = appts
+        .filter(a => a.proposed_datetime && new Date(a.proposed_datetime) >= now)
+        .sort((a,b) => new Date(a.proposed_datetime) - new Date(b.proposed_datetime));
+      const past = appts
+        .filter(a => !a.proposed_datetime || new Date(a.proposed_datetime) < now)
+        .sort((a,b) => new Date(b.proposed_datetime||0) - new Date(a.proposed_datetime||0));
+
+      const all = [...upcoming, ...past];
+      if (countEl) countEl.textContent = all.length ? `${upcoming.length} upcoming` : '';
+
+      if (!all.length) {
+        container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">No confirmed appointments yet.</p>`;
+        return;
+      }
+
+      const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍', availability_inquiry:'🗓️' };
+
+      container.innerHTML = all.map(a => {
+        const isPast = a.proposed_datetime && new Date(a.proposed_datetime) < now;
+        const dt = a.proposed_datetime
+          ? new Date(a.proposed_datetime).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+          : a.proposed_date_text || 'Time TBD';
+        const dtColor = isPast ? 'var(--muted)' : 'var(--green)';
+        const icon = mtypeIcon[a.meeting_type] || '📅';
+        const threadBtn = a.lead_id
+          ? `<button class="secondary" onclick="viewThread(${a.lead_id},'${(a.client_name||a.client_email||'').replace(/'/g,"&#39;")}')" style="font-size:11px;padding:4px 9px">💬 Thread</button>`
+          : '';
+        return `
+        <div class="accepted-appt-row">
+          <span style="font-size:18px;flex-shrink:0">${icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px">${a.client_name || a.client_email || '—'}${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
+            <div style="font-size:12px;color:${dtColor};margin-top:2px">🕐 ${dt}${isPast ? ' <span style="font-size:10px;color:var(--muted)">(past)</span>' : ''}</div>
+            ${a.proposed_address ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">📍 ${a.proposed_address}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
+            ${threadBtn}
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      if (container) container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">Failed to load.</p>`;
+    }
+  }
+
   function openAcceptModal(id) {
     const appt = _appointmentsCache.find(a => a.id === id);
     if (!appt) return;
@@ -2682,8 +2863,7 @@
       if (d.ok) {
         closeModal('accept-appt-modal');
         document.getElementById(`appt-card-${id}`)?.remove();
-        await loadAppointments();
-        await loadCalendarEvents();
+        await Promise.all([loadAppointments(), loadAcceptedAppointments(), loadCalendarEvents()]);
 
         // Show calendar result
         const calStatus = d.cal_created
@@ -2951,14 +3131,15 @@
 
       // Cell background
       let bg = 'var(--bg)';
-      if (isToday)       bg = 'rgba(108,99,255,0.13)';
+      if (isToday)        bg = 'rgba(108,99,255,0.22)';
       else if (isCurWeek) bg = 'rgba(108,99,255,0.06)';
       else if (isNxtWeek) bg = 'rgba(56,189,248,0.07)';
-      if (!inMonth)      bg = 'rgba(0,0,0,0.12)';
+      if (!inMonth)       bg = 'rgba(0,0,0,0.12)';
 
+      const todayBorderLeft = isToday ? 'border-left:3px solid var(--accent);' : '';
       const borderRight  = 'border-right:1px solid var(--border)';
       const borderBottom = 'border-bottom:1px solid var(--border)';
-      const dayColor     = isToday ? 'var(--accent)' : inMonth ? 'var(--text)' : 'var(--muted)';
+      const dayColor     = isToday ? '#fff' : inMonth ? 'var(--text)' : 'var(--muted)';
       const dayWeight    = isToday ? '700' : '400';
 
       const evHtml = events.map(e => {
@@ -2989,14 +3170,19 @@
         return `<span ${tag}><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${time} ${label}</span>${addrLine}</span>`;
       }).join('');
 
+      // Encode date for onclick
+      const cellDateISO = inMonth ? `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}` : '';
+      const clickable = inMonth ? `onclick="openDayView('${cellDateISO}')" style="cursor:pointer"` : '';
+
       html += `
-        <div style="min-height:140px;height:calc((100vh - 230px) / ${Math.ceil(totalCells/7)});padding:8px 6px 6px 8px;background:${bg};${borderRight};${borderBottom};vertical-align:top;position:relative;box-sizing:border-box;overflow:hidden">
-          <div style="font-size:13px;font-weight:${dayWeight};color:${dayColor};margin-bottom:5px;${isToday ? 'background:var(--accent);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px' : ''}">
+        <div ${clickable} style="min-height:140px;height:calc((100vh - 230px) / ${Math.ceil(totalCells/7)});padding:8px 6px 6px 8px;background:${bg};${todayBorderLeft}${borderRight};${borderBottom};vertical-align:top;position:relative;box-sizing:border-box;overflow:hidden;transition:background 0.15s">
+          <div style="font-size:13px;font-weight:${dayWeight};color:${dayColor};margin-bottom:5px;${isToday ? 'background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;' : ''}">
             ${inMonth ? dayNum : ''}
           </div>
+          ${isToday ? `<div style="font-size:9px;color:var(--accent);font-weight:700;letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase">Today</div>` : ''}
           ${evHtml}
-          ${isCurWeek && !isToday ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:var(--accent);opacity:0.5">this week</div>` : ''}
-          ${isNxtWeek ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:#38bdf8;opacity:0.5">next week</div>` : ''}
+          ${isCurWeek && !isToday ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:var(--accent);opacity:0.45">this week</div>` : ''}
+          ${isNxtWeek ? `<div style="position:absolute;bottom:4px;right:5px;font-size:9px;color:#38bdf8;opacity:0.45">next week</div>` : ''}
         </div>`;
     }
 
@@ -3004,11 +3190,52 @@
     container.innerHTML = html;
   }
 
+  function openDayView(dateISO) {
+    const date = new Date(dateISO + 'T00:00:00');
+    const label = date.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    document.getElementById('day-view-title').textContent = `📅 ${label}`;
+
+    const dayEvents = _calEvents.filter(e => {
+      if (!e.start) return false;
+      return new Date(e.start).toDateString() === date.toDateString();
+    }).sort((a,b) => new Date(a.start) - new Date(b.start));
+
+    const container = document.getElementById('day-view-events');
+    if (!dayEvents.length) {
+      container.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px">No events on this day.</div>`;
+    } else {
+      container.innerHTML = dayEvents.map(e => {
+        const start = new Date(e.start).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+        const end   = e.end ? new Date(e.end).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+        const timeRange = end ? `${start} – ${end}` : start;
+        const isLuci = e.lucilease;
+        const bg = isLuci ? 'linear-gradient(135deg,rgba(108,99,255,0.25),rgba(167,139,250,0.15))' : 'var(--bg)';
+        const border = isLuci ? '1px solid rgba(108,99,255,0.4)' : '1px solid var(--border)';
+        return `
+        <div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:14px;margin-bottom:4px">${e.summary || '(no title)'}</div>
+              ${e.location ? `<div style="font-size:12px;color:var(--muted)">📍 ${e.location}</div>` : ''}
+              ${e.description ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${e.description.slice(0,120)}${e.description.length>120?'…':''}</div>` : ''}
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:13px;font-weight:600;color:${isLuci ? 'var(--accent2)' : 'var(--text)'}">${timeRange}</div>
+              ${isLuci ? `<div style="font-size:10px;color:var(--accent);margin-top:3px">⚡ Lucilease</div>` : `<div style="font-size:10px;color:var(--muted);margin-top:3px">Google Cal</div>`}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    openModal('day-view-modal');
+  }
+
   loadLeads();    // preload for dashboard recent leads
   loadDrafts();   // preload drafts badge
   loadArchive();      // preload archive badge
   loadSent();         // preload sent badge
   loadAppointments(); // preload pending appointments on dashboard
+  loadAcceptedAppointments(); // preload confirmed appointments on dashboard
   renderCalendarMonth(); // paint empty month grid on init (events fill in on tab open)
   setPollDisplay();
   buildSwatches();
