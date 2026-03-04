@@ -161,14 +161,19 @@ def _scan_confirmations():
         subject = lead.get("subject", "")
         body    = lead.get("body_full") or lead.get("body_excerpt") or ""
 
-        # Skip if thread already tracked
+        # Skip if thread already has a non-pending appointment (accepted/rejected/deleted)
+        # BUT: if it's still pending, a new reply might be a confirmation — re-scan it
         thread_id = lead["gmail_thread_id"]
         existing  = conn.execute(
-            "SELECT id FROM appointments WHERE thread_id=? AND status != 'deleted'",
+            "SELECT id, status FROM appointments WHERE thread_id=? AND status != 'deleted' ORDER BY id DESC LIMIT 1",
             (thread_id,)
         ).fetchone()
-        if existing:
+        if existing and existing["status"] != "pending":
             continue
+        # If pending exists, allow re-scan only if this lead is a confirmation candidate
+        if existing and existing["status"] == "pending":
+            if not gm.is_confirmation_candidate(subject, body):
+                continue
 
         is_confirmation = gm.is_confirmation_candidate(subject, body)
         is_inquiry      = gm.is_availability_inquiry(subject, body)
@@ -183,22 +188,45 @@ def _scan_confirmations():
             if is_confirmation:
                 data = detect_confirmation(messages)
                 if data:
-                    conn.execute("""
-                        INSERT INTO appointments
-                          (lead_id, thread_id, detected_at, status, meeting_type,
-                           proposed_datetime, proposed_date_text, proposed_address,
-                           client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
-                    """, (
-                        lead["id"], thread_id, now, "pending",
-                        data.get("meeting_type"), data.get("proposed_datetime"),
-                        data.get("proposed_date_text"), data.get("proposed_address"),
-                        data.get("client_name") or lead.get("name"),
-                        data.get("client_email") or lead.get("from_email"),
-                        data.get("partner_name"), data.get("context_snippet"), now, now,
-                    ))
+                    if existing and existing["status"] == "pending":
+                        # Upgrade existing pending appointment with new confirmed details
+                        conn.execute("""
+                            UPDATE appointments SET
+                              meeting_type=COALESCE(?,meeting_type),
+                              proposed_datetime=COALESCE(?,proposed_datetime),
+                              proposed_date_text=COALESCE(?,proposed_date_text),
+                              proposed_address=COALESCE(?,proposed_address),
+                              client_name=COALESCE(?,client_name),
+                              client_email=COALESCE(?,client_email),
+                              partner_name=COALESCE(?,partner_name),
+                              context_snippet=?,
+                              updated_at=?
+                            WHERE id=?
+                        """, (
+                            data.get("meeting_type"), data.get("proposed_datetime"),
+                            data.get("proposed_date_text"), data.get("proposed_address"),
+                            data.get("client_name"), data.get("client_email"),
+                            data.get("partner_name"), data.get("context_snippet"),
+                            now, existing["id"]
+                        ))
+                        print(f"[appt] Confirmation reply updated existing appt {existing['id']}: {data.get('context_snippet','')[:60]}")
+                    else:
+                        conn.execute("""
+                            INSERT INTO appointments
+                              (lead_id, thread_id, detected_at, status, meeting_type,
+                               proposed_datetime, proposed_date_text, proposed_address,
+                               client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
+                        """, (
+                            lead["id"], thread_id, now, "pending",
+                            data.get("meeting_type"), data.get("proposed_datetime"),
+                            data.get("proposed_date_text"), data.get("proposed_address"),
+                            data.get("client_name") or lead.get("name"),
+                            data.get("client_email") or lead.get("from_email"),
+                            data.get("partner_name"), data.get("context_snippet"), now, now,
+                        ))
+                        print(f"[appt] Confirmation detected — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
                     conn.commit()
-                    print(f"[appt] Confirmation detected — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
                     continue  # don't double-insert as inquiry
 
             # Availability inquiry (client asking about times/slots)
@@ -1125,6 +1153,22 @@ async def accept_appointment(appt_id: int, body: dict = None):
     dt_str         = confirmed_body.get("confirmed_datetime") or appt.get("proposed_datetime")
     confirmed_addr = confirmed_body.get("confirmed_address") or appt.get("proposed_address")
 
+    # If no datetime provided, try to resolve from open house slots for this property
+    open_house_slots = []
+    if not dt_str and appt.get("meeting_type") in ("open_house", "availability_inquiry", None):
+        conn2 = get_conn()
+        # Find property by address match
+        prop = conn2.execute(
+            "SELECT id FROM properties WHERE instr(lower(?), lower(SUBSTR(address,1,20))) > 0 OR instr(lower(address), lower(SUBSTR(?,1,20))) > 0 LIMIT 1",
+            (appt.get("proposed_address",""), appt.get("proposed_address",""))
+        ).fetchone()
+        if prop:
+            open_house_slots = [dict(r) for r in conn2.execute(
+                "SELECT * FROM open_house_slots WHERE property_id=? ORDER BY day_of_week, start_time",
+                (prop["id"],)
+            ).fetchall()]
+        conn2.close()
+
     # Human-readable confirmed datetime for email body
     confirmed_date_text = appt.get("proposed_date_text") or dt_str or "the scheduled time"
     if dt_str:
@@ -1146,10 +1190,13 @@ async def accept_appointment(appt_id: int, body: dict = None):
     if dt_str:
         try:
             summary = f"{mtype_label(appt.get('meeting_type')).title()} — {appt.get('client_name') or appt.get('client_email', 'Client')}"
+            # Open houses are 2 hours; all others default to 1 hour
+            duration = 2.0 if appt.get("meeting_type") == "open_house" else 1.0
             calendar_event_id = await asyncio.to_thread(
                 cal.create_event, creds,
                 summary, confirmed_addr or "", dt_str, timezone,
                 description=appt.get("context_snippet") or "",
+                duration_hours=duration,
             )
         except Exception as e:
             cal_error = str(e)
@@ -1165,9 +1212,17 @@ async def accept_appointment(appt_id: int, body: dict = None):
     conn.commit()
     conn.close()
 
-    # Build draft email body — returned to frontend for review, not sent yet
-    email_body = build_confirmation_email(appt_confirmed, profile)
-    subject    = f"Confirmed: {mtype_label(appt.get('meeting_type')).title()}"
+    # Fetch thread for AI email generation
+    thread_messages = []
+    try:
+        if appt.get("thread_id"):
+            thread_messages = gm.get_thread_messages(creds, appt["thread_id"])
+    except Exception:
+        pass
+
+    # Build AI-generated draft email body — returned to frontend for review, not sent yet
+    email_body = build_confirmation_email(appt_confirmed, profile, thread_messages=thread_messages)
+    subject    = f"Confirmed: {mtype_label(appt.get('meeting_type')).title()} — {confirmed_date_text}"
 
     return {
         "ok": True,
@@ -1175,6 +1230,7 @@ async def accept_appointment(appt_id: int, body: dict = None):
         "cal_created": bool(calendar_event_id),
         "cal_warning": cal_error,
         "confirmed_date_text": confirmed_date_text,
+        "open_house_slots": open_house_slots,   # so frontend can display if no time was given
         # Draft email for agent to review
         "draft": {
             "to_email": appt.get("client_email") or "",

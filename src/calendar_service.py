@@ -14,15 +14,16 @@ def get_service(creds):
 
 
 def create_event(creds, summary: str, location: str, start_dt: str,
-                 timezone: str, description: str = "") -> str:
+                 timezone: str, description: str = "", duration_hours: float = 1.0) -> str:
     """
-    Create a 1-hour calendar event with a 30-min popup reminder.
+    Create a calendar event with a 30-min popup reminder.
     start_dt: ISO 8601 string (e.g. '2025-03-10T14:00:00')
+    duration_hours: event length in hours (default 1; open houses use 2)
     Returns the created event id.
     """
     service = get_service(creds)
     start = datetime.datetime.fromisoformat(start_dt)
-    end   = start + datetime.timedelta(hours=1)
+    end   = start + datetime.timedelta(hours=duration_hours)
 
     event = {
         "summary":     summary,

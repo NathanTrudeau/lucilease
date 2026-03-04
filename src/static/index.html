@@ -571,20 +571,25 @@
 
 <!-- ── Accept Appointment Modal (datetime confirm) ── -->
 <div class="modal-overlay" id="accept-appt-modal">
-  <div class="modal" style="width:620px">
+  <div class="modal" style="width:640px">
     <h3>✅ Confirm Appointment</h3>
     <input type="hidden" id="accept-appt-id">
     <div class="form-group">
       <label>Confirm Date &amp; Time</label>
       <input type="datetime-local" id="accept-appt-dt" />
       <div style="font-size:12px;color:var(--muted);margin-top:6px" id="accept-appt-proposed"></div>
+      <!-- Open house slot quick-fill buttons — shown when property has slots configured -->
+      <div id="accept-appt-oh-slots" style="display:none;margin-top:10px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.4px">Open House Schedule — click to fill</div>
+        <div id="accept-appt-oh-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
     </div>
     <div class="form-group">
-      <label>Location (optional override)</label>
+      <label>Location</label>
       <input type="text" id="accept-appt-location" placeholder="Address or location" />
     </div>
-    <div style="font-size:13px;color:var(--muted);background:var(--bg);border-radius:8px;padding:12px;margin-bottom:4px">
-      Accepting will: create a Google Calendar event with a 30-min reminder, and send a brief confirmation email to the client.
+    <div style="font-size:12px;color:var(--muted);background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:4px">
+      ⚡ Accepts the appointment, creates a 📅 Google Calendar event, and generates an AI confirmation email for your review.
     </div>
     <div class="modal-footer">
       <button class="secondary" onclick="closeModal('accept-appt-modal')">Cancel</button>
@@ -2815,25 +2820,71 @@
     }
   }
 
-  function openAcceptModal(id) {
+  async function openAcceptModal(id) {
     const appt = _appointmentsCache.find(a => a.id === id);
     if (!appt) return;
     document.getElementById('accept-appt-id').value = id;
     document.getElementById('accept-appt-location').value = appt.proposed_address || '';
     const proposedEl = document.getElementById('accept-appt-proposed');
     proposedEl.textContent = appt.proposed_date_text
-      ? `Detected time: ${appt.proposed_date_text}`
-      : appt.proposed_datetime ? `Detected: ${appt.proposed_datetime}` : 'No time detected — please set one';
+      ? `Detected: ${appt.proposed_date_text}`
+      : appt.proposed_datetime ? `Detected: ${appt.proposed_datetime}` : 'No time detected from email — set manually or use open house schedule below.';
+
     // Pre-fill datetime-local if we have an ISO datetime
     const dtInput = document.getElementById('accept-appt-dt');
     if (appt.proposed_datetime) {
-      try {
-        // datetime-local needs YYYY-MM-DDTHH:MM format
-        dtInput.value = appt.proposed_datetime.slice(0, 16);
-      } catch(e) { dtInput.value = ''; }
+      try { dtInput.value = appt.proposed_datetime.slice(0, 16); } catch(e) { dtInput.value = ''; }
     } else {
       dtInput.value = '';
     }
+
+    // Load open house slots for this property (async, best-effort)
+    const ohContainer = document.getElementById('accept-appt-oh-slots');
+    const ohBtns      = document.getElementById('accept-appt-oh-btns');
+    ohContainer.style.display = 'none';
+    ohBtns.innerHTML = '';
+
+    if (appt.proposed_address) {
+      try {
+        // Find matching property
+        const propsR = await fetch('/api/properties');
+        const props  = await propsR.json();
+        const prop   = props.find(p => p.address && appt.proposed_address &&
+          (p.address.toLowerCase().includes(appt.proposed_address.toLowerCase().split(',')[0]) ||
+           appt.proposed_address.toLowerCase().includes(p.address.toLowerCase().split(',')[0])));
+        if (prop) {
+          const slotsR = await fetch(`/api/properties/${prop.id}/open-house-slots`);
+          const slots  = await slotsR.json();
+          if (slots.length) {
+            const DAY_IDX = {monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
+            const DAY_LABEL = {monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun'};
+            ohBtns.innerHTML = '';
+            slots.forEach(s => {
+              // Compute next occurrence of this day
+              const targetDow = DAY_IDX[s.day_of_week];
+              const now = new Date();
+              const daysAhead = (targetDow - now.getDay() + 7) % 7 || 7;
+              const next = new Date(now);
+              next.setDate(now.getDate() + daysAhead);
+              const [h, m] = s.start_time.split(':');
+              next.setHours(parseInt(h), parseInt(m), 0, 0);
+              // datetime-local format: YYYY-MM-DDTHH:MM
+              const pad = n => String(n).padStart(2,'0');
+              const dtLocal = `${next.getFullYear()}-${pad(next.getMonth()+1)}-${pad(next.getDate())}T${pad(next.getHours())}:${pad(next.getMinutes())}`;
+              const label = `${s.label || 'Open House'} · ${DAY_LABEL[s.day_of_week]} ${s.start_time}`;
+              const btn = document.createElement('button');
+              btn.className = 'secondary';
+              btn.style.cssText = 'font-size:11px;padding:4px 10px';
+              btn.textContent = label;
+              btn.onclick = () => { dtInput.value = dtLocal; };
+              ohBtns.appendChild(btn);
+            });
+            ohContainer.style.display = 'block';
+          }
+        }
+      } catch(e) { /* silent — slots are optional */ }
+    }
+
     openModal('accept-appt-modal');
   }
 

@@ -578,26 +578,72 @@ Rules:
     }
 
 
-def build_confirmation_email(appointment: dict, profile: dict) -> str:
+def build_confirmation_email(appointment: dict, profile: dict,
+                              thread_messages: list[dict] = None) -> str:
     """
-    Build the brief confirmation email body (no subject, no salutation header).
-    e.g. "I've scheduled you for Tuesday March 5th at 10am at 742 Anacapa St.
-    Looking forward to seeing you [and Partner]. Let me know if you have any questions."
+    AI-generated confirmation email body. Uses the confirmed appointment details
+    and the full thread context so the email accurately reflects what was agreed.
+    Falls back to a static template if Claude fails.
     """
-    name    = appointment.get("client_name") or "you"
-    partner = appointment.get("partner_name")
-    dt_text = appointment.get("proposed_date_text") or appointment.get("proposed_datetime") or "the scheduled time"
-    address = appointment.get("proposed_address")
-    mtype   = appointment.get("meeting_type", "appointment")
+    import json as _j
 
-    location_str = f" at {address}" if address else ""
-    seeing_str   = f" and {partner}" if partner else ""
+    name      = appointment.get("client_name") or "there"
+    partner   = appointment.get("partner_name")
+    dt_text   = appointment.get("proposed_date_text") or appointment.get("proposed_datetime") or "the scheduled time"
+    address   = appointment.get("proposed_address") or ""
+    mtype     = appointment.get("meeting_type", "appointment")
+    agent     = profile.get("agent_name", "")
+    company   = profile.get("agent_company", "")
+    tone      = profile.get("agent_tone", "professional")
 
-    body = (
-        f"I've scheduled {mtype_label(mtype)} for {dt_text}{location_str}. "
-        f"Looking forward to seeing you{seeing_str}. "
-        f"Let me know if you have any questions or concerns."
-    )
+    # Build thread context string for Claude
+    thread_ctx = ""
+    if thread_messages:
+        thread_ctx = "\n\nEmail thread context:\n" + "\n---\n".join([
+            f"From: {m.get('from','')}\nDate: {m.get('date','')}\n{m.get('body','')[:400]}"
+            for m in thread_messages[-5:]
+        ])
+
+    partner_note = f" (and {partner})" if partner else ""
+    address_note = f" at {address}" if address else ""
+
+    prompt = f"""Write a short, warm confirmation email to {name}{partner_note}.
+
+CONFIRMED APPOINTMENT DETAILS — use these exactly:
+- Type: {mtype_label(mtype)}
+- Date/Time: {dt_text}
+- Location: {address or "TBD"}
+{thread_ctx}
+
+Agent info: {agent}{(' — ' + company) if company else ''}
+Tone: {tone}
+
+Rules:
+- 2-3 sentences max
+- State the confirmed date, time, and location precisely as given above
+- Do NOT invent or paraphrase the date/time — use "{dt_text}" exactly
+- Warm closing, invite questions
+- No subject line, no greeting header (just the body text)
+- No filler openers like "Great news!" or "I'm happy to..."
+"""
+
+    try:
+        response = _claude().messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        body = response.content[0].text.strip()
+    except Exception as e:
+        print(f"[ai] build_confirmation_email fallback: {e}")
+        # Static fallback
+        location_str = f" at {address}" if address else ""
+        seeing_str   = f" and {partner}" if partner else ""
+        body = (
+            f"I've confirmed {mtype_label(mtype)} for {dt_text}{location_str}. "
+            f"Looking forward to seeing you{seeing_str}. "
+            f"Let me know if you have any questions."
+        )
 
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
     signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
