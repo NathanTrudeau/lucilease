@@ -72,9 +72,9 @@ def main():
         return lead_id, tid
 
     # ── Lead 1: Violet → 742 Anacapa St ─────────────────────────────────────
-    print("── Lead 1: violettxoxo@gmail.com → 742 Anacapa St ────────────────")
+    print("── Lead 1: violettxoxo0@gmail.com → 742 Anacapa St ───────────────")
     insert_lead(
-        from_email = "violettxoxo@gmail.com",
+        from_email = "violettxoxo0@gmail.com",
         name       = "Violet",
         subject    = "Open house / showing — 742 Anacapa St?",
         body       = """\
@@ -144,7 +144,7 @@ Nathan""",
     print("  The pipeline will detect confirmations / inquiries automatically.")
     print()
     print("  Leads seeded:")
-    print("    📬 violettxoxo@gmail.com   → 742 Anacapa St   (open house / availability)")
+    print("    📬 violettxoxo0@gmail.com  → 742 Anacapa St   (open house / availability)")
     print("    📬 nathan.trudeau@gmail.com → 1405 Cliff Dr   (open house / availability)")
 
 if __name__ == "__main__":
