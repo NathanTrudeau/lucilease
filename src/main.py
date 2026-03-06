@@ -340,7 +340,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.10"
+APP_VERSION = "0.4.11"
 
 @app.get("/health")
 async def health():
@@ -1241,16 +1241,16 @@ async def accept_appointment(appt_id: int, body: dict = None):
             ).fetchall()]
         conn2.close()
 
-    # Human-readable confirmed datetime for email body
+    # Human-readable confirmed datetime for email body.
+    # dt_str is already in LOCAL time (produced by _resolve_day_reference which uses
+    # naive local datetimes). Do NOT call astimezone — that would treat naive as UTC
+    # and shift the time by the UTC offset (e.g. -7h for Pacific = wrong time).
     confirmed_date_text = appt.get("proposed_date_text") or dt_str or "the scheduled time"
     if dt_str:
         try:
-            from zoneinfo import ZoneInfo
             import datetime as _dt2
-            tz    = ZoneInfo(timezone)
-            naive = _dt2.datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-            local = naive.astimezone(tz)
-            confirmed_date_text = local.strftime("%A, %B %-d at %-I:%M %p")
+            naive = _dt2.datetime.fromisoformat(dt_str.replace("Z", "").split("+")[0])
+            confirmed_date_text = naive.strftime("%A, %B %-d at %-I:%M %p")
         except Exception:
             pass
 

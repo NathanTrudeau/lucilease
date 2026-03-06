@@ -1583,8 +1583,8 @@
         </table>`;
 
       filterTab('inbox');
-      // Also update dashboard recent leads
-      updateRecentLeads(leads.slice(0, 5));
+      // Dashboard recent leads: only NEW (not drafted, not replied/sent)
+      updateRecentLeads(leads.filter(l => l.status === 'new').slice(0, 5));
     } catch(e) {
       container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Failed to load leads.</p></div>`;
     }
@@ -2868,30 +2868,26 @@
       const appts = await r.json();
       const now = new Date();
 
-      // Sort soonest first; split into upcoming vs past
+      // Only show upcoming confirmed appointments — past ones are done, off the dashboard
       const upcoming = appts
         .filter(a => a.proposed_datetime && new Date(a.proposed_datetime) >= now)
         .sort((a,b) => new Date(a.proposed_datetime) - new Date(b.proposed_datetime));
-      const past = appts
-        .filter(a => !a.proposed_datetime || new Date(a.proposed_datetime) < now)
-        .sort((a,b) => new Date(b.proposed_datetime||0) - new Date(a.proposed_datetime||0));
 
-      const all = [...upcoming, ...past];
-      if (countEl) countEl.textContent = all.length ? `${upcoming.length} upcoming` : '';
+      const all = upcoming;
+      if (countEl) countEl.textContent = all.length ? `${all.length} upcoming` : '';
 
       if (!all.length) {
-        container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">No confirmed appointments yet.</p>`;
+        container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">No upcoming confirmed appointments.</p>`;
         return;
       }
 
       const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍', availability_inquiry:'🗓️' };
 
       container.innerHTML = all.map(a => {
-        const isPast = a.proposed_datetime && new Date(a.proposed_datetime) < now;
         const dt = a.proposed_datetime
           ? new Date(a.proposed_datetime).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
           : a.proposed_date_text || 'Time TBD';
-        const dtColor = isPast ? 'var(--muted)' : 'var(--green)';
+        const dtColor = 'var(--green)';
         const icon = mtypeIcon[a.meeting_type] || '📅';
         const threadBtn = a.lead_id
           ? `<button class="secondary" onclick="viewThread(${a.lead_id},'${(a.client_name||a.client_email||'').replace(/'/g,"&#39;")}')" style="font-size:11px;padding:4px 9px">💬 Thread</button>`
@@ -2901,7 +2897,7 @@
           <span style="font-size:18px;flex-shrink:0">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px">${a.client_name || a.client_email || '—'}${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
-            <div style="font-size:12px;color:${dtColor};margin-top:2px">🕐 ${dt}${isPast ? ' <span style="font-size:10px;color:var(--muted)">(past)</span>' : ''}</div>
+            <div style="font-size:12px;color:${dtColor};margin-top:2px">🕐 ${dt}</div>
             ${a.proposed_address ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">📍 ${a.proposed_address}</div>` : ''}
           </div>
           <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
