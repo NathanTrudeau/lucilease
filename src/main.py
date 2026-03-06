@@ -319,7 +319,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.5"
+APP_VERSION = "0.4.6"
 
 @app.get("/health")
 async def health():
@@ -1085,6 +1085,27 @@ async def get_lead_thread(lead_id: int):
 class AvailabilityConfig(BaseModel):
     timezone: Optional[str] = None
     availability_windows: Optional[str] = None  # JSON string
+
+@app.get("/api/config/filter")
+async def get_filter_mode():
+    conn = get_conn()
+    row  = conn.execute("SELECT value FROM config WHERE key='no_filter'").fetchone()
+    conn.close()
+    env_override = os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1"
+    return {"no_filter": env_override or (row["value"] == "1" if row else False)}
+
+@app.post("/api/config/filter")
+async def set_filter_mode(body: dict):
+    enabled = "1" if body.get("no_filter") else "0"
+    now  = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('no_filter',?,?)",
+        (enabled, now)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "no_filter": enabled == "1"}
 
 @app.post("/api/config/poll")
 async def save_poll_interval(body: dict):

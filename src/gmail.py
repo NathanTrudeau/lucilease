@@ -223,7 +223,15 @@ def should_admit_email(subject: str, body: str, headers: dict, conn) -> tuple[bo
     7. Housing keyword present → admit
     8. Everything else → block (unknown cold email with no housing signal)
     """
-    if os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1":
+    _no_filter = os.environ.get("LUCILEASE_NO_FILTER", "").strip() == "1"
+    if not _no_filter:
+        try:
+            row = conn.execute("SELECT value FROM config WHERE key='no_filter'").fetchone()
+            if row and row["value"] == "1":
+                _no_filter = True
+        except Exception:
+            pass
+    if _no_filter:
         return True, "filter_disabled"
 
     # Block automated/spam mail first regardless of anything else

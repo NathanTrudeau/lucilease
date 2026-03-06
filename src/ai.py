@@ -222,9 +222,9 @@ Rules:
     now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     cursor = conn.execute("""
-        INSERT INTO drafts (lead_id, subject, body, created_at)
-        VALUES (?,?,?,?)
-    """, (lead_id, subject, body, now))
+        INSERT INTO drafts (lead_id, to_email, subject, body, created_at)
+        VALUES (?,?,?,?,?)
+    """, (lead_id, lead["from_email"], subject, body, now))
     draft_db_id = cursor.lastrowid
     conn.commit()
 
