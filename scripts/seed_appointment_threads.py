@@ -4,7 +4,7 @@ seed_appointment_threads.py — Inject realistic appointment confirmation email 
 into the Lucilease SQLite DB for testing the appointment detection pipeline.
 
 Creates two scenarios:
-  A) violettxoxo0@gmail.com — Vi + Marco, Saturday 11am showing at 742 Anacapa.
+  A) trudeau.nathan@gmail.com — Vi + Marco, Saturday 11am showing at 742 Anacapa.
      Pending: client confirmed, agent needs to Accept.
   B) nathan.trudeau@gmail.com — Sunday 2pm showing at 1405 Cliff Dr.
      Pending: needs agent Accept.
@@ -48,14 +48,14 @@ def main():
     cur = conn.cursor()
     now = datetime.datetime.utcnow()
 
-    # ── Scenario A: Vi Rosario (violettxoxo) — client confirms ───────────────
+    # ── Scenario A: Vi Rosario (trudeau.nathan) — client confirms ───────────────
     thread_a = f"thread_appt_a_{rand_id(6)}"
-    print("Creating Scenario A: violettxoxo0@gmail.com — client confirms Saturday showing")
+    print("Creating Scenario A: trudeau.nathan@gmail.com — client confirms Saturday showing")
 
     lead_a_id = insert_lead(cur,
         msg_id=f"msg_a1_{rand_id()}",
         thread_id=thread_a,
-        from_email="violettxoxo0@gmail.com",
+        from_email="trudeau.nathan@gmail.com",
         name="Vi Rosario",
         subject="Interested in 742 Anacapa St",
         body_excerpt="Hi! I saw the listing for 742 Anacapa and I'd love to schedule a showing...",
@@ -78,7 +78,7 @@ Vi""",
     insert_lead(cur,
         msg_id=f"msg_a3_{rand_id()}",
         thread_id=thread_a,
-        from_email="violettxoxo0@gmail.com",
+        from_email="trudeau.nathan@gmail.com",
         name="Vi Rosario",
         subject="Re: Interested in 742 Anacapa St",
         body_excerpt="Saturday at 11am works perfectly for us! Marco and I will be there.",
@@ -111,7 +111,7 @@ Vi""",
         next_saturday.isoformat() + "Z",
         next_saturday.strftime("Saturday, %B %d at 11:00 AM"),
         "742 Anacapa St, Santa Barbara, CA",
-        "Vi Rosario", "violettxoxo0@gmail.com", "Marco",
+        "Vi Rosario", "trudeau.nathan@gmail.com", "Marco",
         "Saturday at 11am works perfectly for us! Marco and I will be there.",
         "inbox",
         ts(days_ago=2, hour=14, minute=45),
@@ -191,7 +191,7 @@ Looking forward to it.
     conn.close()
 
     print("\n✅ Done! Refresh the Lucilease dashboard to see:")
-    print("   A) Vi Rosario (violettxoxo) — Saturday 11am, 742 Anacapa → click ✅ Accept [AI]")
+    print("   A) Vi Rosario (trudeau.nathan) — Saturday 11am, 742 Anacapa → click ✅ Accept [AI]")
     print("   B) Nathan T. (test) — Sunday 2pm, 1405 Cliff Dr → click ✅ Accept [AI]")
     print("   Both show ⏳ Pending in the Recent Leads appointment column.")
 

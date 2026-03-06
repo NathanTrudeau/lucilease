@@ -76,12 +76,12 @@ def main():
     next_sun = now + datetime.timedelta(days=(6 - now.weekday() + 7) % 7 + 1)
     next_sun = next_sun.replace(hour=14, minute=0, second=0, microsecond=0)
 
-    # ── Scenario A: violettxoxo — confirmed showing, 742 Anacapa ─────────────
+    # ── Scenario A: trudeau.nathan — confirmed showing, 742 Anacapa ─────────────
     thread_a = f"thread_a_{rand_id(8)}"
-    print("Scenario A: violettxoxo — confirmed showing, 742 Anacapa St (Sat 11am)")
+    print("Scenario A: trudeau.nathan — confirmed showing, 742 Anacapa St (Sat 11am)")
 
     lead_a1, _ = insert_lead(cur,
-        from_email="violettxoxo0@gmail.com", name="Violet",
+        from_email="trudeau.nathan@gmail.com", name="Violet",
         subject="Interested in 742 Anacapa St", thread_id=thread_a,
         body="""Hi,
 
@@ -93,7 +93,7 @@ Could we schedule a showing this week? Pretty flexible on timing.
         phone="805-555-0142", budget=3200, days_ago=5, hour=9)
 
     insert_lead(cur,
-        from_email="violettxoxo0@gmail.com", name="Violet",
+        from_email="trudeau.nathan@gmail.com", name="Violet",
         subject="Re: Interested in 742 Anacapa St", thread_id=thread_a,
         body="""Saturday at 11am works perfectly for us! Marco and I will be there.
 
@@ -108,16 +108,16 @@ Thanks so much — Violet""",
         proposed_datetime=next_sat.isoformat() + "Z",
         proposed_date_text=next_sat.strftime("Saturday, %B %-d at 11:00 AM"),
         proposed_address="742 Anacapa St, Santa Barbara, CA",
-        client_name="Violet", client_email="violettxoxo0@gmail.com", partner_name="Marco",
+        client_name="Violet", client_email="trudeau.nathan@gmail.com", partner_name="Marco",
         context_snippet="Saturday at 11am works perfectly for us! Marco and I will be there.")
     print(f"  ✓ thread={thread_a} | {next_sat.strftime('%a %b %-d at %-I:%M %p')} → ✅ Accept")
 
-    # ── Scenario B: violettxoxo — availability inquiry, 88 Harbor Way ────────
+    # ── Scenario B: trudeau.nathan — availability inquiry, 88 Harbor Way ────────
     thread_b = f"thread_b_{rand_id(8)}"
-    print("Scenario B: violettxoxo — availability inquiry, 88 Harbor Way")
+    print("Scenario B: trudeau.nathan — availability inquiry, 88 Harbor Way")
 
     lead_b1, _ = insert_lead(cur,
-        from_email="violettxoxo0@gmail.com", name="Violet",
+        from_email="trudeau.nathan@gmail.com", name="Violet",
         subject="88 Harbor Way — when can we view?", thread_id=thread_b,
         body="""Hello,
 
@@ -132,7 +132,7 @@ When are you available for showings? I'm free most weekday afternoons and anytim
         lead_id=lead_b1, thread_id=thread_b,
         meeting_type="availability_inquiry", status="pending",
         proposed_address="88 Harbor Way, Santa Barbara, CA",
-        client_name="Violet", client_email="violettxoxo0@gmail.com",
+        client_name="Violet", client_email="trudeau.nathan@gmail.com",
         context_snippet="When are you available for showings? Free weekday afternoons and weekends.")
     print(f"  ✓ thread={thread_b} | inquiry → 📅 Suggest Times")
 
@@ -203,8 +203,8 @@ Thanks, Nathan""",
 ✅ Done! 4 scenarios seeded using your two test emails.
 Refresh the dashboard — Pending Appointments should show:
 
-  [A] violettxoxo — 🏠 Showing · 742 Anacapa · Sat 11am  → ✅ Accept [AI]
-  [B] violettxoxo — 🗓 Inquiry · 88 Harbor Way           → 📅 Suggest Times [AI]
+  [A] trudeau.nathan — 🏠 Showing · 742 Anacapa · Sat 11am  → ✅ Accept [AI]
+  [B] trudeau.nathan — 🗓 Inquiry · 88 Harbor Way           → 📅 Suggest Times [AI]
   [C] nathan.trudeau — 🏠 Showing · 1405 Cliff Dr · Sun 2pm → ✅ Accept [AI]
   [D] nathan.trudeau — 🗓 Inquiry · 742 Anacapa           → 📅 Suggest Times [AI]
 
