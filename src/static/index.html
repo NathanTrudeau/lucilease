@@ -2156,7 +2156,19 @@
     const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json();
     if (!d.ok) { alert('Save failed: ' + (d.error || 'unknown')); return; }
-    closeModal('property-edit-modal');
+
+    const savedId = d.id || id;
+
+    if (!id && savedId) {
+      // New property saved — reveal open house section so slots can be added before closing
+      document.getElementById('prop-edit-id').value = savedId;
+      document.getElementById('open-house-section').style.display = '';
+      document.getElementById('property-edit-title').textContent = '🏢 Edit Property';
+      await loadOpenHouseSlots(savedId);
+      showToast('✅ Property saved — add open house times below, then close when done.');
+    } else {
+      closeModal('property-edit-modal');
+    }
     await loadProperties();
     await refreshStats();
   }
