@@ -260,6 +260,71 @@ Rules:
 
 # ── Confirmation detection ────────────────────────────────────────────────────
 
+def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, str]:
+    """
+    Given Claude's proposed_date_text and proposed_datetime, resolve any
+    day-of-week reference to the actual next upcoming date.
+
+    Returns (corrected_proposed_datetime, corrected_proposed_date_text).
+    This is purely deterministic Python — no AI involvement — so it cannot hallucinate.
+    """
+    import datetime as _dt
+    import re
+
+    today = _dt.date.today()
+    now   = _dt.datetime.now()
+
+    DOW = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+    }
+
+    # Try to find a day-of-week name in the text
+    text_lower = (day_text or "").lower()
+    matched_dow = next((name for name in DOW if name in text_lower), None)
+
+    if not matched_dow:
+        return proposed_datetime, day_text  # no day reference found, pass through
+
+    target_dow = DOW[matched_dow]
+    days_ahead = (target_dow - today.weekday()) % 7
+    if days_ahead == 0:
+        days_ahead = 7  # "Saturday" means NEXT Saturday, not today
+    next_day = today + _dt.timedelta(days=days_ahead)
+
+    # Extract time from proposed_datetime if it exists, otherwise from day_text
+    hour, minute = 10, 0  # sensible default: 10am
+    if proposed_datetime:
+        try:
+            parsed = _dt.datetime.fromisoformat(proposed_datetime.replace("Z", "+00:00").replace("Z",""))
+            hour, minute = parsed.hour, parsed.minute
+        except Exception:
+            pass
+    else:
+        # Try to find a time in the text like "2pm", "10:00 AM", "2:00 PM"
+        time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', text_lower)
+        if time_match:
+            h = int(time_match.group(1))
+            m = int(time_match.group(2) or 0)
+            period = time_match.group(3)
+            if period == "pm" and h != 12:
+                h += 12
+            elif period == "am" and h == 12:
+                h = 0
+            hour, minute = h, m
+
+    resolved_dt = _dt.datetime(next_day.year, next_day.month, next_day.day, hour, minute, 0)
+    resolved_iso = resolved_dt.isoformat()
+
+    # Format human-readable: "Saturday, March 7 at 10:00 AM"
+    time_str = resolved_dt.strftime("%-I:%M %p")
+    date_str = resolved_dt.strftime("%A, %B %-d")
+    resolved_text = f"{date_str} at {time_str}"
+
+    print(f"[ai] resolve_day_reference: '{day_text}' → {resolved_text} (was: {proposed_datetime})")
+    return resolved_iso, resolved_text
+
+
 def detect_confirmation(thread_messages: list[dict]) -> dict | None:
     """
     Ask Claude if this thread contains a client agreeing to meet.
@@ -269,42 +334,52 @@ def detect_confirmation(thread_messages: list[dict]) -> dict | None:
     and fill in the exact time during the Accept modal — that is the final
     quality gate. We'd rather surface a pending appointment for agent review
     than silently miss a real confirmation.
+
+    Date resolution is done in Python after Claude responds — never trusted
+    to Claude — to prevent hallucination of wrong dates.
     """
     if not thread_messages:
         return None
+
+    import datetime as _dt
+    today     = _dt.date.today()
+    today_str = today.strftime("%A, %B %-d, %Y")  # e.g. "Friday, March 6, 2026"
 
     thread_text = "\n\n---\n\n".join([
         f"From: {m['from']}\nDate: {m['date']}\n\n{m['body']}"
         for m in thread_messages[-6:]
     ])
 
-    prompt = f"""Analyze this real estate email thread. Your job: detect if the CLIENT has agreed to meet, see a property, or confirmed a time — even loosely.
+    prompt = f"""Analyze this real estate email thread. Detect if the CLIENT has agreed to meet, see a property, or confirmed a time — even loosely.
+
+TODAY'S DATE: {today_str}
 
 Email thread:
 {thread_text[:3500]}
 
 IMPORTANT RULES:
 - "Saturday works", "that works for me", "sounds good", "see you then", "confirmed", "I'll be there" — ALL count as confirmations.
-- The client does NOT need to repeat the exact time — if an agent proposed a time and the client agreed to it, that is confirmed.
-- A DAY confirmation without an exact time still counts — extract the proposed time from the agent's message in the thread.
-- Only return confirmed=false if the client is STILL asking questions, expressing uncertainty, or hasn't responded to a proposal yet.
+- The client does NOT need to repeat the exact time — if an agent proposed a time and the client agreed to the day, use the agent's proposed time.
+- A DAY confirmation without an exact time still counts — extract whatever time the agent proposed.
+- Only return confirmed=false if the client is STILL asking questions, expressing uncertainty, or hasn't responded to a proposed time yet.
+- For proposed_datetime: use YYYY-MM-DDTHH:MM:SS format based on TODAY ({today_str}). If the client said "Saturday", compute the next Saturday from today's date.
+- For proposed_date_text: use the day name ONLY (e.g. "Saturday at 2:00 PM") — do NOT include a month/date number. Python will resolve the exact date.
 
 Respond with ONLY a JSON object, no other text:
 {{
   "confirmed": true or false,
   "meeting_type": "showing" | "call" | "open_house" | "coffee" | "other" | null,
-  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null (extract from agent message if client only confirmed the day),
-  "proposed_date_text": "full human-readable date and time, e.g. Saturday March 8 at 2:00 PM — pull from agent message if client only said the day",
+  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null,
+  "proposed_date_text": "day and time only, e.g. 'Saturday at 2:00 PM' — no month or date number",
   "proposed_address": "property address" or null,
   "client_name": "client first/full name" or null,
   "client_email": "client email address" or null,
   "partner_name": "partner or spouse if mentioned" or null,
-  "context_snippet": "one sentence: what was agreed (include the date/time)",
+  "context_snippet": "one sentence: what was agreed",
   "confidence": "high" | "medium" | "low"
 }}
 
-Note: confidence="low" only if you genuinely cannot tell if the client agreed to anything.
-Err on the side of confirmed=true when the client's reply is clearly positive."""
+confidence="low" only if you genuinely cannot tell if the client agreed to anything."""
 
     import json
     response = _claude().messages.create(
@@ -325,12 +400,20 @@ Err on the side of confirmed=true when the client's reply is clearly positive.""
 
     if not data.get("confirmed"):
         return None
-    # Only hard-reject on low confidence — medium is fine, agent reviews anyway
     if data.get("confidence") == "low":
         print(f"[ai] detect_confirmation: low confidence, skipping — {data.get('context_snippet','')[:80]}")
         return None
 
+    # ── Resolve day-of-week to actual date in Python — no hallucination ──────
+    corrected_dt, corrected_text = _resolve_day_reference(
+        data.get("proposed_date_text", ""),
+        data.get("proposed_datetime"),
+    )
+    data["proposed_datetime"]  = corrected_dt
+    data["proposed_date_text"] = corrected_text
+
     print(f"[ai] detect_confirmation: confirmed ({data.get('confidence')}) — {data.get('context_snippet','')[:80]}")
+    print(f"[ai]   → {data['proposed_date_text']} | {data['proposed_datetime']}")
     return data
 
 
