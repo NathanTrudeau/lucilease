@@ -21,6 +21,20 @@ import calendar_service as cal
 STATIC    = pathlib.Path(__file__).parent / "static"
 POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
 
+def _save_last_poll_time():
+    """Persist current UTC time as last_poll_at so next poll only fetches new mail."""
+    try:
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        conn = get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('last_poll_at',?,?)",
+            (now, now)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[poll] Failed to save last_poll_at: {e}")
+
 def get_poll_secs() -> int:
     """Read poll interval from DB config (user-editable), fall back to env/default."""
     try:
@@ -138,6 +152,7 @@ async def _poll_loop():
         await asyncio.sleep(get_poll_secs())
         try:
             found = await asyncio.to_thread(gm.poll_inbox)
+            _save_last_poll_time()
             if found:
                 print(f"[poll] {found} new lead(s) stored.")
             # Scan for confirmations in both inbox leads and sent mail
@@ -160,13 +175,27 @@ def _scan_confirmations():
     now  = datetime.datetime.utcnow().isoformat() + "Z"
 
     # --- Incoming leads that are confirmation candidates ---
-    # Include 'replied' leads too — a client reply on a replied thread can still be a confirmation
-    recent_leads = conn.execute("""
+    # Only scan leads seen since last scan run — avoids re-running Claude on old threads
+    last_scan_row = conn.execute(
+        "SELECT value FROM config WHERE key='last_scan_at'"
+    ).fetchone()
+    scan_since = last_scan_row["value"] if last_scan_row else None
+
+    # Save current scan time before running (so new leads arriving mid-scan are caught next time)
+    conn.execute(
+        "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('last_scan_at',?,?)",
+        (now, now)
+    )
+    conn.commit()
+
+    since_clause = f"AND first_seen_at > '{scan_since}'" if scan_since else "AND first_seen_at > datetime('now', '-7 days')"
+
+    recent_leads = conn.execute(f"""
         SELECT id, subject, body_full, body_excerpt, gmail_thread_id, from_email, name, status
         FROM leads
         WHERE status IN ('new', 'drafted', 'replied')
         AND gmail_thread_id IS NOT NULL
-        AND first_seen_at > datetime('now', '-7 days')
+        {since_clause}
         ORDER BY first_seen_at DESC
     """).fetchall()
 
@@ -340,7 +369,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.12"
+APP_VERSION = "0.4.13"
 
 @app.get("/health")
 async def health():
@@ -544,6 +573,8 @@ async def create_draft(lead_id: int):
 @app.post("/api/poll")
 async def manual_poll():
     found = await asyncio.to_thread(gm.poll_inbox)
+    # Save last poll timestamp so next poll only fetches genuinely new mail
+    _save_last_poll_time()
     await asyncio.to_thread(_scan_confirmations)
     return {"new_leads": found}
 
@@ -1197,6 +1228,30 @@ async def get_appointments(status: str = "pending"):
     conn.close()
     return [dict(r) for r in rows]
 
+def _build_cal_description(appt: dict) -> str:
+    """Build a rich calendar event description including phone if available."""
+    parts = []
+    if appt.get("context_snippet"):
+        parts.append(appt["context_snippet"])
+    if appt.get("client_email"):
+        parts.append(f"Email: {appt['client_email']}")
+    # Look up phone from leads table
+    try:
+        conn = get_conn()
+        lead = conn.execute(
+            "SELECT phone FROM leads WHERE id=? OR (gmail_thread_id=? AND phone IS NOT NULL) LIMIT 1",
+            (appt.get("lead_id"), appt.get("thread_id"))
+        ).fetchone()
+        conn.close()
+        if lead and lead["phone"]:
+            parts.append(f"Phone: {lead['phone']}")
+    except Exception:
+        pass
+    if appt.get("partner_name"):
+        parts.append(f"Also attending: {appt['partner_name']}")
+    parts.append("[Scheduled via Lucilease]")
+    return "\n".join(parts)
+
 @app.post("/api/appointments/{appt_id}/accept")
 async def accept_appointment(appt_id: int, body: dict = None):
     """
@@ -1267,7 +1322,7 @@ async def accept_appointment(appt_id: int, body: dict = None):
             calendar_event_id = await asyncio.to_thread(
                 cal.create_event, creds,
                 summary, confirmed_addr or "", dt_str, timezone,
-                description=appt.get("context_snippet") or "",
+                description=_build_cal_description(appt),
                 duration_hours=duration,
             )
         except Exception as e:

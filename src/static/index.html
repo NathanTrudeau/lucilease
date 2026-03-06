@@ -1165,6 +1165,7 @@
       <div><h2>Drafts</h2><p>Review, edit, and send your outgoing emails</p></div>
       <div class="header-actions">
         <button onclick="openNewDraftModal()">+ New Draft</button>
+        <button class="secondary" onclick="loadDrafts()" title="Refresh drafts list">↻ Refresh</button>
         <button class="secondary" id="drafts-bulk-btn" onclick="deleteSelectedDrafts()" style="display:none">🗑 Delete (<span id="drafts-bulk-count">0</span>)</button>
         <button class="danger" id="send-all-btn" onclick="confirmSendAll()" style="font-weight:700;letter-spacing:0.3px">📤 SEND ALL</button>
       </div>

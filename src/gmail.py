@@ -416,32 +416,47 @@ def poll_inbox(label_ids: list[str] = None) -> int:
         agent_email = ""
 
     try:
-        # Scan last 7 days of inbox (read + unread) — dedup handles repeats
-        # orderBy=newest ensures latest replies are processed first, not cut off by maxResults
-        query  = "in:inbox newer_than:7d"
+        # Use last-poll timestamp to avoid re-scanning old mail on every refresh.
+        # Falls back to 2d on first run; 7d only on explicit full-rescan.
+        last_poll_row = conn.execute(
+            "SELECT value FROM config WHERE key='last_poll_at'"
+        ).fetchone()
+        if last_poll_row and last_poll_row["value"]:
+            import email.utils as _eu
+            # Gmail `after:` uses Unix timestamp
+            import datetime as _dt
+            lp = _dt.datetime.fromisoformat(last_poll_row["value"].replace("Z",""))
+            after_ts = int(lp.timestamp())
+            query = f"in:inbox after:{after_ts}"
+        else:
+            query = "in:inbox newer_than:2d"
         if label_ids:
             query += " " + " ".join(f"label:{l}" for l in label_ids)
+
         result = service.users().messages().list(
-            userId="me", q=query, maxResults=250
+            userId="me", q=query, maxResults=100
         ).execute()
 
         messages = result.get("messages", [])
-        print(f"[gmail] Found {len(messages)} message(s) in inbox scan.")
+        print(f"[gmail] Found {len(messages)} message(s) in inbox scan (query: {query!r}).")
 
-        for msg_ref in messages:
-            msg_id = msg_ref["id"]
+        # Pre-fetch all known msg_ids in one DB query for fast dedup
+        known_ids = set(
+            r[0] for r in conn.execute("SELECT gmail_msg_id FROM leads WHERE gmail_msg_id IS NOT NULL").fetchall()
+        )
 
-            # Skip if we've already processed this message
-            existing = conn.execute(
-                "SELECT id FROM leads WHERE gmail_msg_id=?", (msg_id,)
-            ).fetchone()
-            if existing:
-                continue
+        new_msg_ids = [m["id"] for m in messages if m["id"] not in known_ids]
+        print(f"[gmail] {len(new_msg_ids)} new message(s) after dedup.")
 
-            # Fetch full message
+        for msg_id in new_msg_ids:
+            # Fetch full message only for genuinely new ones
             msg = service.users().messages().get(
                 userId="me", id=msg_id, format="full"
             ).execute()
+
+            # Always recheck DB (race condition safety)
+            if conn.execute("SELECT 1 FROM leads WHERE gmail_msg_id=?", (msg_id,)).fetchone():
+                continue
 
             headers_raw = msg["payload"].get("headers", [])
             headers     = {h["name"]: h["value"] for h in headers_raw}

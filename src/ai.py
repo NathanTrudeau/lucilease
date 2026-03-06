@@ -171,9 +171,17 @@ def draft_reply(lead_id: int) -> dict:
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
     signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
 
-    # Quick tone/sanity check before drafting
+    # Tone check: only run for unknown/cold senders — skip for known clients/leads
+    # (saves one Claude call per draft for warm contacts)
+    conn_check = get_conn()
+    is_known = conn_check.execute(
+        "SELECT 1 FROM clients WHERE lower(email)=lower(?) LIMIT 1",
+        (lead.get("from_email",""),)
+    ).fetchone()
+    conn_check.close()
+
     thread_text = (lead.get("body_full") or lead.get("body_excerpt") or "").strip()
-    if thread_text:
+    if thread_text and not is_known:
         tone = assess_thread_tone(thread_text)
         if tone.get("flag"):
             return {
