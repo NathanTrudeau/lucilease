@@ -1113,6 +1113,9 @@
         <h2>Sent</h2>
         <p>Emails sent through Lucilease</p>
       </div>
+      <div class="header-actions">
+        <button class="secondary" onclick="loadSent()" title="Refresh sent list">↻ Refresh</button>
+      </div>
     </header>
     <div class="content">
       <div class="tab-search">
@@ -1139,6 +1142,7 @@
         <p>Emails archived from inbox</p>
       </div>
       <div class="header-actions">
+        <button class="secondary" onclick="loadArchive()" title="Refresh archive">↻ Refresh</button>
         <button class="secondary" id="archive-bulk-btn" onclick="restoreSelectedArchive()" style="display:none">↩ Restore (<span id="archive-bulk-count">0</span>)</button>
       </div>
     </header>
@@ -2160,14 +2164,39 @@
 
     const savedId = d.id || id;
 
+    // Auto-save any pending open house rows that haven't been individually confirmed
+    if (savedId) {
+      const pendingRows = document.querySelectorAll('[id^="oh-new-"]');
+      for (const row of pendingRows) {
+        const tempId = row.id;
+        const dayEl   = document.getElementById(`${tempId}-day`);
+        const startEl = document.getElementById(`${tempId}-start`);
+        const endEl   = document.getElementById(`${tempId}-end`);
+        const labelEl = document.getElementById(`${tempId}-label`);
+        if (!dayEl || !startEl || !endEl || !startEl.value || !endEl.value) continue;
+        await fetch(`/api/properties/${savedId}/open-house-slots`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            day_of_week: dayEl.value,
+            start_time:  startEl.value,
+            end_time:    endEl.value,
+            label:       labelEl?.value.trim() || null,
+          }),
+        });
+        row.remove();
+      }
+    }
+
     if (!id && savedId) {
-      // New property saved — reveal open house section so slots can be added before closing
+      // New property — reveal open house section, stay in modal
       document.getElementById('prop-edit-id').value = savedId;
       document.getElementById('open-house-section').style.display = '';
       document.getElementById('property-edit-title').textContent = '🏢 Edit Property';
       await loadOpenHouseSlots(savedId);
-      showToast('✅ Property saved — add open house times below, then close when done.');
+      showToast('✅ Property saved — open house times saved. Close when done.');
     } else {
+      await loadOpenHouseSlots(savedId);
       closeModal('property-edit-modal');
     }
     await loadProperties();

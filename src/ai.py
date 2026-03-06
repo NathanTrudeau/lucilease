@@ -208,8 +208,8 @@ Client inquiry:
 Rules:
 - Maximum 3 short paragraphs. Aim for under 120 words total.
 - First paragraph: warm one-line greeting + acknowledge their specific need.
-- Second paragraph: if a matching property exists, mention it briefly. Otherwise skip.
-- Third paragraph: one clear call to action — if suggesting a showing or meeting, propose a SPECIFIC time that fits within your open house windows or general availability above. Do not suggest vague times like "sometime this week".
+- Second paragraph: if a matching property exists, mention it briefly. If they asked about a property NOT in your listings, politely let them know it's not one you represent and offer to help with what you do have.
+- Third paragraph: one clear call to action — propose a SPECIFIC time using ONLY times from your open house schedule or general availability listed above. NEVER suggest a time outside those windows. If no availability windows are set, say you'll follow up to confirm timing.
 - Do NOT use "I hope this email finds you well" or any filler openers.
 - Do NOT include a subject line or signature — those are added separately.
 - Plain text only, no markdown.
@@ -536,8 +536,10 @@ Today: {today_str}
 Write a SHORT, warm reply offering 2-3 SPECIFIC available time slots in the next 1–2 weeks.
 
 Rules:
-- Start directly with the offer — no "great question" filler
+- ONLY suggest times that fall within your availability windows listed above. NEVER suggest off-hours.
+- If no availability windows are set, offer 2-3 generic weekday morning/afternoon options and note timing is flexible.
 - Offer 2–3 specific options like "Tuesday March 10th at 10am, Thursday March 12th at 2pm, or Saturday March 14th at 11am"
+- Start directly with the offer — no "great question" filler
 - Ask them to confirm whichever works best
 - Under 80 words total
 - No subject line, no signature, plain text only"""
