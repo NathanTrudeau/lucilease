@@ -292,26 +292,28 @@ def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, 
         days_ahead = 7  # "Saturday" means NEXT Saturday, not today
     next_day = today + _dt.timedelta(days=days_ahead)
 
-    # Extract time from proposed_datetime if it exists, otherwise from day_text
+    # Extract time — prefer text over proposed_datetime (text comes from agent's email,
+    # proposed_datetime time component is often hallucinated by Claude)
     hour, minute = 10, 0  # sensible default: 10am
-    if proposed_datetime:
+
+    # Try text first — most reliable source
+    time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', text_lower)
+    if time_match:
+        h = int(time_match.group(1))
+        m = int(time_match.group(2) or 0)
+        period = time_match.group(3)
+        if period == "pm" and h != 12:
+            h += 12
+        elif period == "am" and h == 12:
+            h = 0
+        hour, minute = h, m
+    elif proposed_datetime:
+        # Fall back to proposed_datetime only if no time found in text
         try:
-            parsed = _dt.datetime.fromisoformat(proposed_datetime.replace("Z", "+00:00").replace("Z",""))
+            parsed = _dt.datetime.fromisoformat(proposed_datetime.replace("Z", "").replace("+00:00", ""))
             hour, minute = parsed.hour, parsed.minute
         except Exception:
             pass
-    else:
-        # Try to find a time in the text like "2pm", "10:00 AM", "2:00 PM"
-        time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', text_lower)
-        if time_match:
-            h = int(time_match.group(1))
-            m = int(time_match.group(2) or 0)
-            period = time_match.group(3)
-            if period == "pm" and h != 12:
-                h += 12
-            elif period == "am" and h == 12:
-                h = 0
-            hour, minute = h, m
 
     resolved_dt = _dt.datetime(next_day.year, next_day.month, next_day.day, hour, minute, 0)
     resolved_iso = resolved_dt.isoformat()
@@ -699,41 +701,44 @@ def build_confirmation_email(appointment: dict, profile: dict,
     # ── Hardcoded factual anchor — NO AI touches this line ──────────────────
     anchor = f"I've confirmed {mtype_label(mtype)} for {dt_text}{location_str}."
 
-    # Build thread context for warm prose (Claude only writes non-factual sentences)
-    thread_ctx = ""
-    if thread_messages:
-        thread_ctx = "\n".join([
-            f"From: {m.get('from','')}: {m.get('body','')[:200]}"
-            for m in thread_messages[-3:]
-        ])
+    # Claude only writes warm framing — no dates, no times, no locations.
+    # All factual content lives exclusively in `anchor` (Python-generated, zero AI).
+    prompt = f"""Write ONE warm opening sentence and ONE warm closing sentence for a real estate confirmation email.
 
-    prompt = f"""Write ONE warm opening sentence (no greeting like "Hi") and ONE warm closing sentence for a real estate appointment confirmation email.
+Agent {agent or 'the agent'} is confirming {mtype_label(mtype)} with {name}{partner_str}. Tone: {tone}.
 
-Context: Agent {agent or 'the agent'} is confirming {mtype_label(mtype)} with {name}{partner_str}.
-Tone: {tone}.
-{f'Thread context: {thread_ctx}' if thread_ctx else ''}
-
-Rules:
-- Opening sentence: briefly acknowledge the client's enthusiasm or reference something specific from the thread. Do NOT mention any date or time.
-- Closing sentence: invite any questions, keep it warm and brief.
-- Plain text, no markdown, no subject line, no greeting.
-- Output ONLY the two sentences separated by a newline — nothing else.
+STRICT RULES — violating these means the email is wrong:
+- Do NOT mention any time, date, day, hour, or location in either sentence.
+- Opening: warm acknowledgment of the booking (e.g. "Looking forward to meeting you!" or "Excited to show you the property!"). No facts.
+- Closing: invite questions (e.g. "Feel free to reach out with any questions."). No facts.
+- Plain text only. No markdown. No greeting. No subject line.
+- Output ONLY the two sentences on separate lines — nothing else.
 """
 
     try:
         response = _claude().messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=120,
+            max_tokens=100,
             messages=[{"role": "user", "content": prompt}],
         )
         prose = response.content[0].text.strip()
         lines = [l.strip() for l in prose.split("\n") if l.strip()]
-        opening = lines[0] if lines else ""
-        closing = lines[1] if len(lines) > 1 else "Let me know if you have any questions."
+
+        # Safety check: if Claude snuck a time/day reference into the prose, strip it
+        import re as _re
+        TIME_PATTERN = _re.compile(
+            r'\b(\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)|'
+            r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
+            r'january|february|march|april|may|june|july|august|september|october|november|december)'
+            r')\b', _re.IGNORECASE
+        )
+        lines = [l for l in lines if not TIME_PATTERN.search(l)]
+
+        opening = lines[0] if lines else f"Looking forward to seeing you{partner_str}!"
+        closing = lines[1] if len(lines) > 1 else "Let me know if you have any questions or need to make any changes."
         body = f"{opening}\n\n{anchor}\n\n{closing}"
     except Exception as e:
         print(f"[ai] build_confirmation_email prose fallback: {e}")
-        # Pure static fallback — still uses hardcoded anchor
         body = (
             f"Looking forward to seeing you{partner_str}!\n\n"
             f"{anchor}\n\n"
