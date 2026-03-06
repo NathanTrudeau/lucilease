@@ -282,12 +282,36 @@ def _is_housing_relevant(subject: str, body: str) -> bool:
 
 
 CONFIRMATION_KEYWORDS = [
-    "confirmed", "it's confirmed", "see you", "see you then", "see you at",
-    "looking forward to meeting", "looking forward to seeing", "scheduled for",
-    "we're all set", "all set", "i'll be there", "we'll be there",
-    "sounds good", "perfect", "that works", "works for me", "works for us",
-    "that time works", "meet you at", "appointment confirmed", "set for",
-    "booked for", "i'll see you", "we're meeting", "it's a date",
+    # Direct confirmations
+    "confirmed", "it's confirmed", "all confirmed", "appointment confirmed",
+    "that's confirmed", "yes, confirmed",
+    # See you
+    "see you", "see you then", "see you at", "see you there", "see you soon",
+    "i'll see you", "we'll see you", "we will see you",
+    # Works / agreement
+    "that works", "this works", "works for me", "works for us", "works great",
+    "that works for me", "that works for us", "this works for me",
+    "that time works", "this time works", "the time works",
+    "works perfectly", "works well", "perfect timing",
+    # Affirmative short replies
+    "yes!", "yes,", "yes that", "yes this", "yes it", "yes i", "yes we",
+    "sounds good", "sounds great", "sounds perfect", "sounds like a plan",
+    "perfect", "perfect!", "great!", "awesome!", "wonderful!",
+    "absolutely", "definitely", "for sure", "of course",
+    # Looking forward
+    "looking forward to meeting", "looking forward to seeing", "looking forward to it",
+    "looking forward to the", "can't wait", "excited to see",
+    # Scheduling language
+    "scheduled for", "we're all set", "all set", "we are all set",
+    "i'll be there", "we'll be there", "i will be there", "we will be there",
+    "meet you at", "meet you there", "meet you then",
+    "set for", "booked for", "we're meeting", "it's a date",
+    # Day/time confirmations
+    "saturday works", "sunday works", "monday works", "tuesday works",
+    "wednesday works", "thursday works", "friday works",
+    "saturday is good", "sunday is good", "monday is good",
+    "that day works", "that day is good", "that day is great",
+    "morning works", "afternoon works", "evening works",
 ]
 
 INQUIRY_KEYWORDS = [
@@ -385,6 +409,12 @@ def poll_inbox(label_ids: list[str] = None) -> int:
     conn    = get_conn()
     new_count = 0
 
+    # Get the agent's own email to filter self-sent messages from inbox
+    try:
+        agent_email = service.users().getProfile(userId="me").execute().get("emailAddress", "").lower()
+    except Exception:
+        agent_email = ""
+
     try:
         # Scan last 7 days of inbox (read + unread) — dedup handles repeats
         # orderBy=newest ensures latest replies are processed first, not cut off by maxResults
@@ -421,6 +451,12 @@ def poll_inbox(label_ids: list[str] = None) -> int:
             thread_id = msg.get("threadId")
             # Inject thread_id into headers dict for should_admit_email lookup
             headers["_thread_id"] = thread_id
+
+            # Skip emails sent FROM the agent's own account (e.g. outgoing replies in inbox)
+            from_raw  = headers.get("From", "")
+            from_addr = _extract_email_addr(from_raw)
+            if agent_email and from_addr == agent_email:
+                continue
 
             admit, reason = should_admit_email(subject, body, headers, conn)
             if not admit:

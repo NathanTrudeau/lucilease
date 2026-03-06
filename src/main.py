@@ -160,12 +160,14 @@ def _scan_confirmations():
     now  = datetime.datetime.utcnow().isoformat() + "Z"
 
     # --- Incoming leads that are confirmation candidates ---
+    # Include 'replied' leads too — a client reply on a replied thread can still be a confirmation
     recent_leads = conn.execute("""
-        SELECT id, subject, body_full, body_excerpt, gmail_thread_id, from_email, name
+        SELECT id, subject, body_full, body_excerpt, gmail_thread_id, from_email, name, status
         FROM leads
-        WHERE status IN ('new', 'drafted')
+        WHERE status IN ('new', 'drafted', 'replied')
         AND gmail_thread_id IS NOT NULL
         AND first_seen_at > datetime('now', '-7 days')
+        ORDER BY first_seen_at DESC
     """).fetchall()
 
     for lead in recent_leads:
@@ -319,7 +321,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.6"
+APP_VERSION = "0.4.7"
 
 @app.get("/health")
 async def health():
@@ -801,8 +803,7 @@ async def send_all_drafts():
     if not creds:
         return {"ok": False, "error": "Gmail not connected"}
 
-    results = []
-    for row in rows:
+    async def _send_one(row):
         row = dict(row)
         now = datetime.datetime.utcnow().isoformat() + "Z"
         try:
@@ -813,28 +814,23 @@ async def send_all_drafts():
                     gm.send_gmail_message, creds,
                     row["to_email"], row["subject"], row["body"]
                 )
-            conn2 = get_conn()
-            conn2.execute(
-                "UPDATE drafts SET status='sent', error_msg=NULL, updated_at=? WHERE id=?",
-                (now, row["id"])
-            )
-            conn2.commit()
-            conn2.close()
-            results.append({"id": row["id"], "to": row["to_email"], "ok": True})
+            c = get_conn()
+            c.execute("UPDATE drafts SET status='sent', error_msg=NULL, updated_at=? WHERE id=?", (now, row["id"]))
+            if row.get("lead_id"):
+                c.execute("UPDATE leads SET status='replied', handled_at=? WHERE id=?", (now, row["lead_id"]))
+            c.commit(); c.close()
+            return {"id": row["id"], "to": row["to_email"], "ok": True}
         except Exception as e:
             err = str(e)
-            conn2 = get_conn()
-            conn2.execute(
-                "UPDATE drafts SET status='failed', error_msg=?, updated_at=? WHERE id=?",
-                (err, now, row["id"])
-            )
-            conn2.commit()
-            conn2.close()
-            results.append({"id": row["id"], "to": row["to_email"], "ok": False, "error": err})
+            c = get_conn()
+            c.execute("UPDATE drafts SET status='failed', error_msg=?, updated_at=? WHERE id=?", (err, now, row["id"]))
+            c.commit(); c.close()
+            return {"id": row["id"], "to": row["to_email"], "ok": False, "error": err}
 
-    sent  = sum(1 for r in results if r["ok"])
+    results = await asyncio.gather(*[_send_one(row) for row in rows])
+    sent   = sum(1 for r in results if r["ok"])
     failed = sum(1 for r in results if not r["ok"])
-    return {"ok": True, "sent": sent, "failed": failed, "results": results}
+    return {"ok": True, "sent": sent, "failed": failed, "results": list(results)}
 
 
 # ── Gmail account info ────────────────────────────────────────────────────────

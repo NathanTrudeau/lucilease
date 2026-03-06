@@ -1766,22 +1766,24 @@
     btn.textContent = '⏳ Auto-Drafting...';
     try {
       const r = await fetch('/api/leads?status=new');
-      const leads = await r.json();
-      if (!leads.length) { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; return; }
-      let done = 0;
-      for (const lead of leads) {
-        try {
-          await fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' });
-        } catch(e) { /* individual failures are fine */ }
-        done++;
-        btn.textContent = `⏳ [AI] ${done}/${leads.length}`;
+      const leads = await r.json().then(l => l.filter(x => x.status === 'new'));
+      if (!leads.length) {
+        showToast('No new leads to draft');
+        btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; return;
       }
-      btn.textContent = `✓ ${done} Drafted [AI]`;
-      await loadDrafts();
+      btn.textContent = `⏳ [AI] Drafting ${leads.length}…`;
+      // Fire all draft requests in parallel
+      const results = await Promise.allSettled(
+        leads.map(lead => fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' }).then(r => r.json()))
+      );
+      const succeeded = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
+      const flagged   = results.filter(r => r.status === 'fulfilled' && r.value?.needs_review).length;
+      btn.textContent = `✓ ${succeeded} Drafted [AI]`;
+      if (flagged) showToast(`⚠️ ${flagged} lead(s) flagged for review`, true);
+      await Promise.all([loadDrafts(), loadLeads()]);
       setTimeout(() => { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; }, 3000);
     } catch(e) {
-      btn.textContent = '⚡ Auto-Draft All [AI]';
-      btn.disabled = false;
+      btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false;
     }
   }
 

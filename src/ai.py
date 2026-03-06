@@ -581,68 +581,65 @@ Rules:
 def build_confirmation_email(appointment: dict, profile: dict,
                               thread_messages: list[dict] = None) -> str:
     """
-    AI-generated confirmation email body. Uses the confirmed appointment details
-    and the full thread context so the email accurately reflects what was agreed.
-    Falls back to a static template if Claude fails.
-    """
-    import json as _j
+    Build a confirmation email body.
 
+    Strategy: the date/time/address sentence is always a hardcoded template —
+    no AI involvement on those fields to prevent hallucination. Claude only
+    generates the warm opening/closing sentences around the factual anchor.
+    """
     name      = appointment.get("client_name") or "there"
     partner   = appointment.get("partner_name")
     dt_text   = appointment.get("proposed_date_text") or appointment.get("proposed_datetime") or "the scheduled time"
     address   = appointment.get("proposed_address") or ""
     mtype     = appointment.get("meeting_type", "appointment")
     agent     = profile.get("agent_name", "")
-    company   = profile.get("agent_company", "")
     tone      = profile.get("agent_tone", "professional")
 
-    # Build thread context string for Claude
+    partner_str  = f" and {partner}" if partner else ""
+    location_str = f" at {address}" if address else ""
+
+    # ── Hardcoded factual anchor — NO AI touches this line ──────────────────
+    anchor = f"I've confirmed {mtype_label(mtype)} for {dt_text}{location_str}."
+
+    # Build thread context for warm prose (Claude only writes non-factual sentences)
     thread_ctx = ""
     if thread_messages:
-        thread_ctx = "\n\nEmail thread context:\n" + "\n---\n".join([
-            f"From: {m.get('from','')}\nDate: {m.get('date','')}\n{m.get('body','')[:400]}"
-            for m in thread_messages[-5:]
+        thread_ctx = "\n".join([
+            f"From: {m.get('from','')}: {m.get('body','')[:200]}"
+            for m in thread_messages[-3:]
         ])
 
-    partner_note = f" (and {partner})" if partner else ""
-    address_note = f" at {address}" if address else ""
+    prompt = f"""Write ONE warm opening sentence (no greeting like "Hi") and ONE warm closing sentence for a real estate appointment confirmation email.
 
-    prompt = f"""Write a short, warm confirmation email to {name}{partner_note}.
-
-CONFIRMED APPOINTMENT DETAILS — use these exactly:
-- Type: {mtype_label(mtype)}
-- Date/Time: {dt_text}
-- Location: {address or "TBD"}
-{thread_ctx}
-
-Agent info: {agent}{(' — ' + company) if company else ''}
-Tone: {tone}
+Context: Agent {agent or 'the agent'} is confirming {mtype_label(mtype)} with {name}{partner_str}.
+Tone: {tone}.
+{f'Thread context: {thread_ctx}' if thread_ctx else ''}
 
 Rules:
-- 2-3 sentences max
-- State the confirmed date, time, and location precisely as given above
-- Do NOT invent or paraphrase the date/time — use "{dt_text}" exactly
-- Warm closing, invite questions
-- No subject line, no greeting header (just the body text)
-- No filler openers like "Great news!" or "I'm happy to..."
+- Opening sentence: briefly acknowledge the client's enthusiasm or reference something specific from the thread. Do NOT mention any date or time.
+- Closing sentence: invite any questions, keep it warm and brief.
+- Plain text, no markdown, no subject line, no greeting.
+- Output ONLY the two sentences separated by a newline — nothing else.
 """
 
     try:
         response = _claude().messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=200,
+            max_tokens=120,
             messages=[{"role": "user", "content": prompt}],
         )
-        body = response.content[0].text.strip()
+        prose = response.content[0].text.strip()
+        lines = [l.strip() for l in prose.split("\n") if l.strip()]
+        opening = lines[0] if lines else ""
+        closing = lines[1] if len(lines) > 1 else "Let me know if you have any questions."
+        body = f"{opening}\n\n{anchor}\n\n{closing}"
     except Exception as e:
-        print(f"[ai] build_confirmation_email fallback: {e}")
-        # Static fallback
-        location_str = f" at {address}" if address else ""
-        seeing_str   = f" and {partner}" if partner else ""
+        print(f"[ai] build_confirmation_email prose fallback: {e}")
+        # Pure static fallback — still uses hardcoded anchor
         body = (
-            f"I've confirmed {mtype_label(mtype)} for {dt_text}{location_str}. "
-            f"Looking forward to seeing you{seeing_str}. "
-            f"Let me know if you have any questions."
+            f"Looking forward to seeing you{partner_str}!\n\n"
+            f"{anchor}\n\n"
+            f"Let me know if you have any questions or need to make any changes."
         )
 
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
