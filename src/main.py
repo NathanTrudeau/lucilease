@@ -21,6 +21,18 @@ import calendar_service as cal
 STATIC    = pathlib.Path(__file__).parent / "static"
 POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
 
+def get_poll_secs() -> int:
+    """Read poll interval from DB config (user-editable), fall back to env/default."""
+    try:
+        conn = get_conn()
+        row  = conn.execute("SELECT value FROM config WHERE key='poll_seconds'").fetchone()
+        conn.close()
+        if row and row["value"]:
+            return max(60, int(row["value"]))  # minimum 60s
+    except Exception:
+        pass
+    return POLL_SECS
+
 
 # ── Background polling ────────────────────────────────────────────────────────
 
@@ -123,7 +135,7 @@ async def _maybe_create_outgoing_calendar_event(draft: dict, creds, now: str):
 
 async def _poll_loop():
     while True:
-        await asyncio.sleep(POLL_SECS)
+        await asyncio.sleep(get_poll_secs())
         try:
             found = await asyncio.to_thread(gm.poll_inbox)
             if found:
@@ -307,7 +319,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.4"
+APP_VERSION = "0.4.5"
 
 @app.get("/health")
 async def health():
@@ -315,7 +327,7 @@ async def health():
         "status":        "ok",
         "version":       APP_VERSION,
         "authenticated": gm.is_authenticated(),
-        "poll_seconds":  POLL_SECS,
+        "poll_seconds":  get_poll_secs(),
         "timestamp":     datetime.datetime.utcnow().isoformat() + "Z",
     }
 
@@ -1073,6 +1085,20 @@ async def get_lead_thread(lead_id: int):
 class AvailabilityConfig(BaseModel):
     timezone: Optional[str] = None
     availability_windows: Optional[str] = None  # JSON string
+
+@app.post("/api/config/poll")
+async def save_poll_interval(body: dict):
+    """Save user-defined poll interval (seconds). Minimum 60s."""
+    secs = max(60, int(body.get("poll_seconds", 300)))
+    now  = datetime.datetime.utcnow().isoformat() + "Z"
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('poll_seconds',?,?)",
+        (str(secs), now)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "poll_seconds": secs}
 
 @app.get("/api/config/availability")
 async def get_availability():

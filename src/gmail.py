@@ -321,7 +321,7 @@ def scan_sent_for_confirmations() -> list[dict]:
     try:
         query  = "in:sent newer_than:7d"
         result = service.users().messages().list(
-            userId="me", q=query, maxResults=50
+            userId="me", q=query, maxResults=100
         ).execute()
 
         for msg_ref in result.get("messages", []):
@@ -379,11 +379,12 @@ def poll_inbox(label_ids: list[str] = None) -> int:
 
     try:
         # Scan last 7 days of inbox (read + unread) — dedup handles repeats
+        # orderBy=newest ensures latest replies are processed first, not cut off by maxResults
         query  = "in:inbox newer_than:7d"
         if label_ids:
             query += " " + " ".join(f"label:{l}" for l in label_ids)
         result = service.users().messages().list(
-            userId="me", q=query, maxResults=100
+            userId="me", q=query, maxResults=250
         ).execute()
 
         messages = result.get("messages", [])

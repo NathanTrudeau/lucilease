@@ -665,11 +665,14 @@
 
 <!-- ── Thread View Modal ── -->
 <div class="modal-overlay" id="thread-modal">
-  <div class="modal" style="width:760px;max-height:88vh;display:flex;flex-direction:column">
-    <h3>💬 Email Thread</h3>
-    <div id="thread-modal-meta" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
-    <div id="thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px"></div>
-    <div class="modal-footer" style="margin-top:12px">
+  <div class="modal" style="width:800px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin-bottom:0">💬 Email Thread</h3>
+      <button class="secondary" onclick="closeModal('thread-modal')" style="padding:5px 12px;font-size:12px">✕ Close</button>
+    </div>
+    <div id="thread-modal-meta" style="font-size:12px;color:var(--muted);margin-bottom:16px"></div>
+    <div id="thread-messages" style="display:flex;flex-direction:column;gap:14px"></div>
+    <div style="margin-top:20px;text-align:right">
       <button class="secondary" onclick="closeModal('thread-modal')">Close</button>
     </div>
   </div>
@@ -1280,9 +1283,15 @@
         <div class="setting-row">
           <div>
             <div class="setting-label">Poll Interval</div>
-            <div class="setting-desc">How often Lucilease checks for new emails</div>
+            <div class="setting-desc">How often Lucilease checks Gmail (minimum 60s)</div>
           </div>
-          <div style="color:var(--muted);font-size:13px;" id="poll-interval-display">—</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="number" id="poll-interval-input" min="60" max="3600" step="60"
+              style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;text-align:center"
+              placeholder="300" />
+            <span style="font-size:12px;color:var(--muted)">seconds</span>
+            <button class="secondary" onclick="savePollInterval()" style="font-size:12px;padding:6px 12px">Save</button>
+          </div>
         </div>
       </div>
 
@@ -1295,13 +1304,7 @@
           </div>
           <button onclick="openProfileModal()">Edit Profile</button>
         </div>
-        <div class="setting-row">
-          <div>
-            <div class="setting-label">Google Calendar</div>
-            <div class="setting-desc">Connect to schedule appointments from emails</div>
-          </div>
-          <button class="secondary" disabled>Phase 4b</button>
-        </div>
+
       </div>
 
       <div class="panel settings-section">
@@ -2154,12 +2157,31 @@
     await Promise.all([checkAuth(), refreshStats(), loadLeads(), loadDrafts(), loadSent(), loadArchive(), loadAppointments(), loadAcceptedAppointments()]);
   }
 
-  // ── Poll interval display ─────────────────────────────────────────────────
+  // ── Poll interval ─────────────────────────────────────────────────────────
   function setPollDisplay() {
-    const secs = 300; // default, could fetch from /health
-    const mins = Math.round(secs / 60);
-    document.getElementById('poll-interval-display').textContent =
-      mins >= 1 ? `Every ${mins} minute${mins > 1 ? 's' : ''}` : `Every ${secs}s`;
+    fetch('/health').then(r => r.json()).then(d => {
+      const secs = d.poll_seconds || 300;
+      const input = document.getElementById('poll-interval-input');
+      if (input) input.value = secs;
+    }).catch(() => {});
+  }
+
+  async function savePollInterval() {
+    const input = document.getElementById('poll-interval-input');
+    const secs  = Math.max(60, parseInt(input.value) || 300);
+    input.value = secs;
+    try {
+      const r = await fetch('/api/config/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ poll_seconds: secs }),
+      });
+      const d = await r.json();
+      if (d.ok) showToast(`✅ Poll interval saved — every ${secs}s`);
+      else showToast('Failed to save poll interval', true);
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+    }
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────────
@@ -3069,7 +3091,7 @@
         msgsEl.innerHTML = msgs.map((m) => `
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
             <div style="font-size:11px;color:var(--accent2);margin-bottom:4px">${m.from || '—'} · ${m.date || ''}</div>
-            <div style="font-size:12px;white-space:pre-wrap;color:var(--text);max-height:120px;overflow-y:auto">${m.body || '(empty)'}</div>
+            <div style="font-size:12px;white-space:pre-wrap;color:var(--text)">${m.body || '(empty)'}</div>
           </div>`).join('');
       }
       openModal('delete-appt-modal');
@@ -3341,7 +3363,7 @@
             </div>
             <div style="font-size:11px;color:var(--muted);white-space:nowrap">#${i + 1}</div>
           </div>
-          <div style="font-size:13px;white-space:pre-wrap;line-height:1.6;color:var(--text);max-height:200px;overflow-y:auto">${m.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
+          <div style="font-size:13px;white-space:pre-wrap;line-height:1.6;color:var(--text)">${m.body || '<span style="color:var(--muted)">(no body)</span>'}</div>
         </div>`).join('');
     } catch(e) {
       msgsEl.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px">Failed to load thread: ${e.message}</div>`;
