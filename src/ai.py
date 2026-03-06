@@ -262,48 +262,58 @@ Rules:
 
 def detect_confirmation(thread_messages: list[dict]) -> dict | None:
     """
-    Ask Claude if this thread contains a confirmed appointment.
-    Returns extracted data dict or None if no confirmation found.
+    Ask Claude if this thread contains a client agreeing to meet.
+
+    Intentionally lenient: if the client agrees to ANY day/time that was
+    proposed (even just "Saturday works"), that counts. The agent will verify
+    and fill in the exact time during the Accept modal — that is the final
+    quality gate. We'd rather surface a pending appointment for agent review
+    than silently miss a real confirmation.
     """
     if not thread_messages:
         return None
 
     thread_text = "\n\n---\n\n".join([
         f"From: {m['from']}\nDate: {m['date']}\n\n{m['body']}"
-        for m in thread_messages[-6:]  # last 6 messages max
+        for m in thread_messages[-6:]
     ])
 
-    prompt = f"""Analyze this email thread. Determine if a specific meeting, showing, appointment, or phone call has been CONFIRMED by both parties — meaning both sides have agreed on a specific time.
+    prompt = f"""Analyze this real estate email thread. Your job: detect if the CLIENT has agreed to meet, see a property, or confirmed a time — even loosely.
 
 Email thread:
-{thread_text[:3000]}
+{thread_text[:3500]}
+
+IMPORTANT RULES:
+- "Saturday works", "that works for me", "sounds good", "see you then", "confirmed", "I'll be there" — ALL count as confirmations.
+- The client does NOT need to repeat the exact time — if an agent proposed a time and the client agreed to it, that is confirmed.
+- A DAY confirmation without an exact time still counts — extract the proposed time from the agent's message in the thread.
+- Only return confirmed=false if the client is STILL asking questions, expressing uncertainty, or hasn't responded to a proposal yet.
 
 Respond with ONLY a JSON object, no other text:
 {{
   "confirmed": true or false,
   "meeting_type": "showing" | "call" | "open_house" | "coffee" | "other" | null,
-  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null,
-  "proposed_date_text": "human readable date/time string",
-  "proposed_address": "address or location string" or null,
+  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null (extract from agent message if client only confirmed the day),
+  "proposed_date_text": "full human-readable date and time, e.g. Saturday March 8 at 2:00 PM — pull from agent message if client only said the day",
+  "proposed_address": "property address" or null,
   "client_name": "client first/full name" or null,
   "client_email": "client email address" or null,
-  "partner_name": "partner or spouse name if explicitly mentioned" or null,
-  "context_snippet": "one sentence summary of what was confirmed",
+  "partner_name": "partner or spouse if mentioned" or null,
+  "context_snippet": "one sentence: what was agreed (include the date/time)",
   "confidence": "high" | "medium" | "low"
 }}
 
-Only set confirmed=true if there is clear mutual agreement on a specific time.
-Vague interest, questions about availability, or one-sided proposals do NOT count."""
+Note: confidence="low" only if you genuinely cannot tell if the client agreed to anything.
+Err on the side of confirmed=true when the client's reply is clearly positive."""
 
     import json
     response = _claude().messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=400,
+        max_tokens=450,
         messages=[{"role": "user", "content": prompt}],
     )
 
     text = response.content[0].text.strip()
-    # Strip markdown code fences if present
     if "```" in text:
         text = text.split("```")[1].replace("json", "").strip()
 
@@ -313,9 +323,14 @@ Vague interest, questions about availability, or one-sided proposals do NOT coun
         print(f"[ai] detect_confirmation JSON parse error: {e} — raw: {text[:200]}")
         return None
 
-    if not data.get("confirmed") or data.get("confidence") == "low":
+    if not data.get("confirmed"):
+        return None
+    # Only hard-reject on low confidence — medium is fine, agent reviews anyway
+    if data.get("confidence") == "low":
+        print(f"[ai] detect_confirmation: low confidence, skipping — {data.get('context_snippet','')[:80]}")
         return None
 
+    print(f"[ai] detect_confirmation: confirmed ({data.get('confidence')}) — {data.get('context_snippet','')[:80]}")
     return data
 
 

@@ -192,8 +192,27 @@ def _scan_confirmations():
         is_confirmation = gm.is_confirmation_candidate(subject, body)
         is_inquiry      = gm.is_availability_inquiry(subject, body)
 
-        if not is_confirmation and not is_inquiry:
+        # Force confirmation scan on any reply to a thread where we sent a draft —
+        # client replies are often short ("Saturday works", "yes!", "perfect") and
+        # may not hit keyword filters. If we sent a draft, any reply is worth scanning.
+        thread_has_sent_draft = conn.execute(
+            "SELECT 1 FROM drafts WHERE lead_id=? AND status='sent' LIMIT 1",
+            (lead["id"],)
+        ).fetchone()
+        if not thread_has_sent_draft:
+            # Also check by thread_id match across all leads
+            thread_has_sent_draft = conn.execute("""
+                SELECT 1 FROM drafts d
+                JOIN leads l ON d.lead_id = l.id
+                WHERE l.gmail_thread_id=? AND d.status='sent' LIMIT 1
+            """, (thread_id,)).fetchone()
+
+        if not is_confirmation and not is_inquiry and not thread_has_sent_draft:
             continue
+
+        # Treat replies to sent drafts as confirmation candidates
+        if thread_has_sent_draft and not is_confirmation:
+            is_confirmation = True
 
         try:
             messages = gm.get_thread_messages(creds, thread_id)
@@ -321,7 +340,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.7"
+APP_VERSION = "0.4.8"
 
 @app.get("/health")
 async def health():
@@ -525,7 +544,17 @@ async def create_draft(lead_id: int):
 @app.post("/api/poll")
 async def manual_poll():
     found = await asyncio.to_thread(gm.poll_inbox)
+    await asyncio.to_thread(_scan_confirmations)
     return {"new_leads": found}
+
+@app.post("/api/scan-appointments")
+async def manual_scan_appointments():
+    """Force re-scan all recent threads for confirmations and inquiries."""
+    await asyncio.to_thread(_scan_confirmations)
+    conn = get_conn()
+    pending = conn.execute("SELECT COUNT(*) FROM appointments WHERE status='pending'").fetchone()[0]
+    conn.close()
+    return {"ok": True, "pending_appointments": pending}
 
 
 # ── Agent profile ─────────────────────────────────────────────────────────────

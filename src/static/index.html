@@ -999,6 +999,7 @@
       </div>
       <div class="header-actions">
         <button class="secondary" id="refresh-all-btn" onclick="pollAndRefresh(this)">↻ Refresh Gmail</button>
+        <button class="secondary" id="scan-appts-btn" onclick="scanAppointments(this)" title="Re-scan all recent threads for confirmations and inquiries">🔍 Scan Appointments</button>
       </div>
     </header>
     <div class="content">
@@ -1666,6 +1667,19 @@
       await loadLeads();   // refreshes button state → shows "✓ In DB"
       await refreshStats();
     }
+  }
+
+  async function scanAppointments(btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Scanning…'; }
+    try {
+      const r = await fetch('/api/scan-appointments', { method: 'POST' });
+      const d = await r.json();
+      await Promise.all([loadAppointments(), loadAcceptedAppointments()]);
+      showToast(`🔍 Scan complete — ${d.pending_appointments} pending appointment(s)`);
+    } catch(e) {
+      showToast('Scan failed: ' + e.message, true);
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan Appointments'; }
   }
 
   async function pollAndRefresh(btn) {
