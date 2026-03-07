@@ -386,12 +386,12 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
+APP_VERSION = "0.4.18"
+
 app = FastAPI(title="Lucilease", version=APP_VERSION, lifespan=lifespan)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
-
-APP_VERSION = "0.4.18"
 
 @app.get("/health")
 async def health():
