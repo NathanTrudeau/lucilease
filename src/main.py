@@ -392,7 +392,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.16"
+APP_VERSION = "0.4.17"
 
 @app.get("/health")
 async def health():
@@ -451,12 +451,19 @@ async def auth_status():
 
 @app.get("/api/stats")
 async def stats():
+    import datetime as _dt
     conn = get_conn()
     cur  = conn.cursor()
     leads_new   = cur.execute("SELECT COUNT(*) FROM leads WHERE status IN ('new','drafted')").fetchone()[0]
     leads_total = cur.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
     clients     = cur.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
     properties  = cur.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
+
+    # 7-day delta: how many new rows appeared in the last 7 days
+    cutoff = (_dt.datetime.utcnow() - _dt.timedelta(days=7)).isoformat() + "Z"
+    leads_7d     = cur.execute("SELECT COUNT(*) FROM leads     WHERE first_seen_at >= ?",  (cutoff,)).fetchone()[0]
+    clients_7d   = cur.execute("SELECT COUNT(*) FROM clients   WHERE created_at    >= ?",  (cutoff,)).fetchone()[0]
+    props_7d     = cur.execute("SELECT COUNT(*) FROM properties WHERE created_at   >= ?",  (cutoff,)).fetchone()[0]
 
     # Breakdowns for summary bars
     client_rows = cur.execute("SELECT status, COUNT(*) as n FROM clients GROUP BY status").fetchall()
@@ -468,6 +475,9 @@ async def stats():
         "leads_total":  leads_total,
         "clients":      clients,
         "properties":   properties,
+        "leads_7d":     leads_7d,
+        "clients_7d":   clients_7d,
+        "properties_7d": props_7d,
         "clients_by_status":    {r["status"]: r["n"] for r in client_rows},
         "properties_by_status": {r["status"]: r["n"] for r in prop_rows},
     }

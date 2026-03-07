@@ -1019,56 +1019,81 @@
       <div class="stats">
         <div class="stat-card">
           <div class="label">New Leads</div>
-          <div class="value" id="stat-leads-new">—</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div class="value" id="stat-leads-new">—</div>
+          </div>
           <div class="sub" id="stat-leads-new-sub">Awaiting review</div>
         </div>
         <div class="stat-card">
           <div class="label">Total Leads</div>
-          <div class="value" id="stat-leads-total">—</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div class="value" id="stat-leads-total">—</div>
+            <div id="stat-leads-delta" style="font-size:12px;color:#4ade80;font-weight:600;display:none"></div>
+          </div>
           <div class="sub">All time</div>
         </div>
         <div class="stat-card">
           <div class="label">Clients</div>
-          <div class="value" id="stat-clients">—</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div class="value" id="stat-clients">—</div>
+            <div id="stat-clients-delta" style="font-size:12px;color:#4ade80;font-weight:600;display:none"></div>
+          </div>
           <div class="sub">Active contacts</div>
         </div>
         <div class="stat-card">
           <div class="label">Properties</div>
-          <div class="value" id="stat-properties">—</div>
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div class="value" id="stat-properties">—</div>
+            <div id="stat-properties-delta" style="font-size:12px;color:#4ade80;font-weight:600;display:none"></div>
+          </div>
           <div class="sub">Active listings</div>
         </div>
       </div>
 
       <!-- Confirmed Appointments (accepted) -->
       <div class="panel" id="accepted-appt-panel" style="margin-bottom:16px">
-        <div class="panel-header">
-          ✅ Confirmed Appointments
-          <span id="accepted-appt-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        <div class="panel-header" onclick="toggleSection('accepted-appt-body')" style="cursor:pointer;user-select:none">
+          <span>✅ Confirmed Appointments <span id="accepted-appt-count" style="color:var(--muted);font-weight:400;font-size:12px"></span></span>
+          <span id="accepted-appt-chevron" style="font-size:12px;color:var(--muted);transition:transform .2s">▼</span>
         </div>
-        <div id="accepted-appt-container">
-          <div class="empty-state" style="padding:16px"><p style="color:var(--muted);font-size:12px">No confirmed appointments yet.</p></div>
+        <div id="accepted-appt-body">
+          <div style="padding:10px 16px 10px">
+            <input type="text" id="search-confirmed" placeholder="🔍 Search client, property, date…"
+              oninput="filterConfirmedAppts()"
+              style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--text);outline:none">
+          </div>
+          <div id="accepted-appt-container">
+            <div class="empty-state" style="padding:16px"><p style="color:var(--muted);font-size:12px">No confirmed appointments yet.</p></div>
+          </div>
         </div>
       </div>
 
       <!-- Pending Appointments -->
       <div class="panel" id="appt-dashboard-panel" style="margin-bottom:16px">
-        <div class="panel-header">
-          📅 Pending Appointments
-          <span id="appt-badge-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        <div class="panel-header" onclick="toggleSection('appt-body')" style="cursor:pointer;user-select:none">
+          <span>📅 Pending Appointments <span id="appt-badge-count" style="color:var(--muted);font-weight:400;font-size:12px"></span></span>
+          <span id="appt-body-chevron" style="font-size:12px;color:var(--muted);transition:transform .2s">▼</span>
         </div>
-        <div id="appt-container">
-          <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📅</div><p>No pending appointments detected yet.</p></div>
+        <div id="appt-body">
+          <div id="appt-container">
+            <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">📅</div><p>No pending appointments detected yet.</p></div>
+          </div>
         </div>
       </div>
 
       <!-- Recent Leads -->
       <div class="panel">
-        <div class="panel-header">
-          Recent Leads
-          <button class="secondary" onclick="goToPage('inbox')">View all →</button>
+        <div class="panel-header" onclick="toggleSection('recent-leads-body')" style="cursor:pointer;user-select:none">
+          <span>Recent Leads <span style="color:var(--muted);font-weight:400;font-size:12px" id="recent-leads-subhead"></span></span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="secondary" onclick="event.stopPropagation();goToPage('inbox')" style="font-size:12px;padding:4px 10px">View all →</button>
+            <span id="recent-leads-body-chevron" style="font-size:12px;color:var(--muted);transition:transform .2s">▼</span>
+          </div>
         </div>
-        <div id="recent-leads-container">
-          <div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>
+        <div id="recent-leads-body">
+          <div id="recent-leads-container">
+            <div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>
+          </div>
         </div>
       </div>
 
@@ -1500,6 +1525,17 @@
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────
+  function _setDelta(elId, delta) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (delta > 0) {
+      el.textContent = `▲ +${delta} this week`;
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
   async function refreshStats() {
     try {
       const r = await fetch('/api/stats');
@@ -1509,10 +1545,25 @@
       document.getElementById('stat-clients').textContent     = d.clients;
       document.getElementById('stat-properties').textContent  = d.properties;
 
+      _setDelta('stat-leads-delta',      d.leads_7d     || 0);
+      _setDelta('stat-clients-delta',    d.clients_7d   || 0);
+      _setDelta('stat-properties-delta', d.properties_7d || 0);
+
       const badge = document.getElementById('inbox-badge');
       badge.textContent = d.leads_new;
       badge.className   = 'badge' + (d.leads_new > 0 ? '' : ' zero');
     } catch(e) { console.error('Stats failed', e); }
+  }
+
+  // ── Section collapse ──────────────────────────────────────────────────────
+  const _sectionCollapsed = {};
+  function toggleSection(bodyId) {
+    const body    = document.getElementById(bodyId);
+    const chevron = document.getElementById(bodyId + '-chevron');
+    if (!body) return;
+    const collapsed = _sectionCollapsed[bodyId] = !_sectionCollapsed[bodyId];
+    body.style.display = collapsed ? 'none' : '';
+    if (chevron) chevron.style.transform = collapsed ? 'rotate(-90deg)' : '';
   }
 
   // ── Leads ─────────────────────────────────────────────────────────────────
@@ -1596,6 +1647,8 @@
   }
 
   function updateRecentLeads(leads) {
+    const subhead = document.getElementById('recent-leads-subhead');
+    if (subhead) subhead.textContent = leads.length ? `${leads.length} new` : '';
     const el = document.getElementById('recent-leads-container');
     if (!leads.length) {
       el.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No leads yet.</p></div>`;
@@ -2915,6 +2968,53 @@
     }
   }
 
+  // ── Confirmed appointment search ──────────────────────────────────────────
+  let _acceptedApptCache = [];
+
+  function filterConfirmedAppts() {
+    const q = (document.getElementById('search-confirmed')?.value || '').toLowerCase().trim();
+    const container = document.getElementById('accepted-appt-container');
+    if (!container) return;
+    const filtered = q ? _acceptedApptCache.filter(a => {
+      return (a.client_name    || '').toLowerCase().includes(q)
+          || (a.client_email   || '').toLowerCase().includes(q)
+          || (a.partner_name   || '').toLowerCase().includes(q)
+          || (a.proposed_address || '').toLowerCase().includes(q)
+          || (a.proposed_date_text || '').toLowerCase().includes(q)
+          || (a.proposed_datetime  || '').toLowerCase().includes(q);
+    }) : _acceptedApptCache;
+    _renderAcceptedAppts(container, filtered);
+  }
+
+  function _renderAcceptedAppts(container, appts) {
+    const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍', availability_inquiry:'🗓️' };
+    if (!appts.length) {
+      container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">No matching confirmed appointments.</p>`;
+      return;
+    }
+    container.innerHTML = appts.map(a => {
+      const dt = a.proposed_datetime
+        ? new Date(a.proposed_datetime).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+        : a.proposed_date_text || 'Time TBD';
+      const icon = mtypeIcon[a.meeting_type] || '📅';
+      const threadBtn = a.lead_id
+        ? `<button class="secondary" onclick="viewThread(${a.lead_id},'${(a.client_name||a.client_email||'').replace(/'/g,"&#39;")}')" style="font-size:11px;padding:4px 9px">💬 Thread</button>`
+        : '';
+      return `
+      <div class="accepted-appt-row">
+        <span style="font-size:18px;flex-shrink:0">${icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px">${a.client_name || a.client_email || '—'}${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
+          <div style="font-size:12px;color:var(--green);margin-top:2px">🕐 ${dt}</div>
+          ${a.proposed_address ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">📍 ${a.proposed_address}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
+          ${threadBtn}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   // ── Confirmed (accepted) appointments on dashboard ────────────────────────
   async function loadAcceptedAppointments() {
     const container = document.getElementById('accepted-appt-container');
@@ -2926,42 +3026,14 @@
       const now = new Date();
 
       // Only show upcoming confirmed appointments — past ones are done, off the dashboard
-      const upcoming = appts
+      _acceptedApptCache = appts
         .filter(a => a.proposed_datetime && new Date(a.proposed_datetime) >= now)
         .sort((a,b) => new Date(a.proposed_datetime) - new Date(b.proposed_datetime));
 
-      const all = upcoming;
-      if (countEl) countEl.textContent = all.length ? `${all.length} upcoming` : '';
-
-      if (!all.length) {
-        container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">No upcoming confirmed appointments.</p>`;
-        return;
-      }
-
-      const mtypeIcon = { showing:'🏠', call:'📞', open_house:'🚪', coffee:'☕', other:'📍', availability_inquiry:'🗓️' };
-
-      container.innerHTML = all.map(a => {
-        const dt = a.proposed_datetime
-          ? new Date(a.proposed_datetime).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
-          : a.proposed_date_text || 'Time TBD';
-        const dtColor = 'var(--green)';
-        const icon = mtypeIcon[a.meeting_type] || '📅';
-        const threadBtn = a.lead_id
-          ? `<button class="secondary" onclick="viewThread(${a.lead_id},'${(a.client_name||a.client_email||'').replace(/'/g,"&#39;")}')" style="font-size:11px;padding:4px 9px">💬 Thread</button>`
-          : '';
-        return `
-        <div class="accepted-appt-row">
-          <span style="font-size:18px;flex-shrink:0">${icon}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px">${a.client_name || a.client_email || '—'}${a.partner_name ? ` & ${a.partner_name}` : ''}</div>
-            <div style="font-size:12px;color:${dtColor};margin-top:2px">🕐 ${dt}</div>
-            ${a.proposed_address ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">📍 ${a.proposed_address}</div>` : ''}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
-            ${threadBtn}
-          </div>
-        </div>`;
-      }).join('');
+      if (countEl) countEl.textContent = _acceptedApptCache.length ? `${_acceptedApptCache.length} upcoming` : '';
+      _renderAcceptedAppts(container, _acceptedApptCache);
+      // Re-apply search filter if active
+      if (document.getElementById('search-confirmed')?.value) filterConfirmedAppts();
     } catch(e) {
       if (container) container.innerHTML = `<p style="color:var(--muted);font-size:12px;padding:14px 20px">Failed to load.</p>`;
     }
