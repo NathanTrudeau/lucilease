@@ -110,6 +110,36 @@ def main():
         if count == 0:
             continue
 
+        # On weekends: insert an open house with multiple clients at same slot
+        if weekday == 5:  # Saturday — open house block with 3–5 attendees
+            prop = random.choice([p for p, t in PROPERTIES if t == 'open_house'])[0] if any(t == 'open_house' for _, t in PROPERTIES) else PROPERTIES[0][0]
+            # pick open house property
+            oh_props = [(p, t) for p, t in PROPERTIES if t == 'open_house']
+            if oh_props:
+                oh_prop, oh_type = random.choice(oh_props)
+                oh_dt = datetime.datetime(2026, 3, day, 11, 0, 0)
+                oh_iso = oh_dt.isoformat() + "Z"
+                oh_date_text = oh_dt.strftime("%A, %B %d at %-I:%M %p")
+                oh_attendees = random.randint(3, 5)
+                for _ in range(oh_attendees):
+                    client = CLIENTS[client_idx % len(CLIENTS)]
+                    client_idx += 1
+                    c_name, c_email, c_phone = client
+                    lead_id = insert_lead(cur, c_email, c_name, c_phone,
+                        f"Open House — {oh_prop.split(',')[0]}", f"Attending open house at {oh_prop}",
+                        (oh_dt - datetime.timedelta(days=2)).isoformat() + "Z")
+                    oh_created = (oh_dt - datetime.timedelta(days=random.randint(1, 3))).isoformat() + "Z"
+                    cur.execute("""
+                        INSERT INTO appointments (lead_id, thread_id, status, meeting_type,
+                            proposed_datetime, proposed_date_text, proposed_address, client_name,
+                            client_email, context_snippet, calendar_event_id, source, detected_at, created_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (lead_id, f"thread_oh_{rand_id()}", "accepted", "open_house",
+                          oh_iso, oh_date_text, oh_prop, c_name, c_email,
+                          random.choice(SNIPPETS), f"gcal_event_{rand_id()}",
+                          "inbox", oh_created, oh_created))
+                    inserted += 1
+
         # Spread appointments through the day (30-min gaps min)
         hour = start_hour
         minute = 0

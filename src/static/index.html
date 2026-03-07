@@ -1790,17 +1790,25 @@
         showToast('No new leads to draft');
         btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; return;
       }
-      btn.textContent = `⏳ [AI] Drafting ${leads.length}…`;
-      // Fire all draft requests in parallel
+      const total = leads.length;
+      let done = 0;
+      btn.textContent = `⏳ Drafting 0 / ${total}…`;
+
+      // Fire all in parallel but update counter as each one completes
       const results = await Promise.allSettled(
-        leads.map(lead => fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' }).then(r => r.json()))
+        leads.map(lead =>
+          fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => { done++; btn.textContent = `⏳ Drafting ${done} / ${total}…`; return data; })
+        )
       );
       const succeeded = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
       const flagged   = results.filter(r => r.status === 'fulfilled' && r.value?.needs_review).length;
-      btn.textContent = `✓ ${succeeded} Drafted [AI]`;
+      btn.textContent = `✅ ${succeeded} / ${total} Drafted [AI]`;
+      showToast(`✅ ${succeeded} draft${succeeded !== 1 ? 's' : ''} created`);
       if (flagged) showToast(`⚠️ ${flagged} lead(s) flagged for review`, true);
       await Promise.all([loadDrafts(), loadLeads()]);
-      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; }, 3000);
+      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; }, 4000);
     } catch(e) {
       btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false;
     }
@@ -3407,20 +3415,53 @@
     if (!dayEvents.length) {
       container.innerHTML = `<div style="color:var(--muted);text-align:center;padding:24px">No events on this day.</div>`;
     } else {
-      container.innerHTML = dayEvents.map(e => {
-        const start = new Date(e.start).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
-        const end   = e.end ? new Date(e.end).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+      // Condense overlapping events: same start time + same location → one grouped card
+      const groups = [];
+      const seen = new Map(); // key: "startISO|location"
+      for (const e of dayEvents) {
+        const loc = (e.location || '').trim().toLowerCase();
+        const key = `${e.start}|${loc}`;
+        if (seen.has(key)) {
+          seen.get(key).clients.push(e);
+        } else {
+          const g = { ...e, clients: [e] };
+          seen.set(key, g);
+          groups.push(g);
+        }
+      }
+
+      container.innerHTML = groups.map(g => {
+        const start = new Date(g.start).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+        const end   = g.end ? new Date(g.end).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
         const timeRange = end ? `${start} – ${end}` : start;
-        const isLuci = e.lucilease;
+        const isLuci = g.lucilease;
         const bg = isLuci ? 'linear-gradient(135deg,rgba(108,99,255,0.25),rgba(167,139,250,0.15))' : 'var(--bg)';
         const border = isLuci ? '1px solid rgba(108,99,255,0.4)' : '1px solid var(--border)';
+        const count = g.clients.length;
+
+        // Multi-client: show client list instead of single summary
+        let titleHtml, descHtml = '';
+        if (count > 1) {
+          // Extract client names from summary (e.g. "Showing — Mia Chen")
+          const names = g.clients.map(c => {
+            const m = (c.summary || '').match(/—\s*(.+)$/);
+            return m ? m[1].trim() : (c.summary || '');
+          }).filter(Boolean);
+          const typeLabel = (g.summary || '').replace(/—.+$/, '').trim() || 'Appointment';
+          titleHtml = `<div style="font-weight:600;font-size:14px;margin-bottom:6px">${typeLabel} <span style="font-size:12px;background:rgba(108,99,255,0.2);color:var(--accent2);padding:2px 8px;border-radius:10px">${count} clients</span></div>`;
+          descHtml = `<div style="font-size:12px;color:var(--muted);line-height:1.6">${names.map(n => `• ${n}`).join('<br>')}</div>`;
+        } else {
+          titleHtml = `<div style="font-weight:600;font-size:14px;margin-bottom:4px">${g.summary || '(no title)'}</div>`;
+          if (g.description) descHtml = `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${g.description.slice(0,120)}${g.description.length>120?'…':''}</div>`;
+        }
+
         return `
         <div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <div style="flex:1">
-              <div style="font-weight:600;font-size:14px;margin-bottom:4px">${e.summary || '(no title)'}</div>
-              ${e.location ? `<div style="font-size:12px;color:var(--muted)">📍 ${e.location}</div>` : ''}
-              ${e.description ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${e.description.slice(0,120)}${e.description.length>120?'…':''}</div>` : ''}
+              ${titleHtml}
+              ${g.location ? `<div style="font-size:12px;color:var(--muted)">📍 ${g.location}</div>` : ''}
+              ${descHtml}
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-size:13px;font-weight:600;color:${isLuci ? 'var(--accent2)' : 'var(--text)'}">${timeRange}</div>
