@@ -84,11 +84,12 @@ async def _maybe_create_outgoing_calendar_event(draft: dict, creds, now: str):
     # Build a minimal thread to pass to detect_confirmation
     fake_thread = [{"from": "agent", "date": now, "body": body}]
     try:
-        data = await asyncio.to_thread(detect_confirmation, fake_thread)
+        detected_list = await asyncio.to_thread(detect_confirmation, fake_thread)
     except Exception as e:
         print(f"[appt] Outgoing draft detection error: {e}")
         return
 
+    data = detected_list[0] if detected_list else None
     if not data:
         return
 
@@ -204,19 +205,7 @@ def _scan_confirmations():
         subject = lead.get("subject", "")
         body    = lead.get("body_full") or lead.get("body_excerpt") or ""
 
-        # Skip if thread already has a non-pending appointment (accepted/rejected/deleted)
-        # BUT: if it's still pending, a new reply might be a confirmation — re-scan it
         thread_id = lead["gmail_thread_id"]
-        existing  = conn.execute(
-            "SELECT id, status FROM appointments WHERE thread_id=? AND status != 'deleted' ORDER BY id DESC LIMIT 1",
-            (thread_id,)
-        ).fetchone()
-        if existing and existing["status"] != "pending":
-            continue
-        # If pending exists, allow re-scan only if this lead is a confirmation candidate
-        if existing and existing["status"] == "pending":
-            if not gm.is_confirmation_candidate(subject, body):
-                continue
 
         is_confirmation = gm.is_confirmation_candidate(subject, body)
         is_inquiry      = gm.is_availability_inquiry(subject, body)
@@ -247,52 +236,78 @@ def _scan_confirmations():
             messages = gm.get_thread_messages(creds, thread_id)
 
             # Try confirmation first (higher priority)
+            # detect_confirmation now returns a LIST — supports multi-appointment threads
             if is_confirmation:
-                data = detect_confirmation(messages)
-                if data:
-                    if existing and existing["status"] == "pending":
-                        # Upgrade existing pending appointment with new confirmed details
-                        conn.execute("""
-                            UPDATE appointments SET
-                              meeting_type=COALESCE(?,meeting_type),
-                              proposed_datetime=COALESCE(?,proposed_datetime),
-                              proposed_date_text=COALESCE(?,proposed_date_text),
-                              proposed_address=COALESCE(?,proposed_address),
-                              client_name=COALESCE(?,client_name),
-                              client_email=COALESCE(?,client_email),
-                              partner_name=COALESCE(?,partner_name),
-                              context_snippet=?,
-                              updated_at=?
-                            WHERE id=?
-                        """, (
-                            data.get("meeting_type"), data.get("proposed_datetime"),
-                            data.get("proposed_date_text"), data.get("proposed_address"),
-                            data.get("client_name"), data.get("client_email"),
-                            data.get("partner_name"), data.get("context_snippet"),
-                            now, existing["id"]
-                        ))
-                        print(f"[appt] Confirmation reply updated existing appt {existing['id']}: {data.get('context_snippet','')[:60]}")
-                    else:
-                        conn.execute("""
-                            INSERT INTO appointments
-                              (lead_id, thread_id, detected_at, status, meeting_type,
-                               proposed_datetime, proposed_date_text, proposed_address,
-                               client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
-                        """, (
-                            lead["id"], thread_id, now, "pending",
-                            data.get("meeting_type"), data.get("proposed_datetime"),
-                            data.get("proposed_date_text"), data.get("proposed_address"),
-                            data.get("client_name") or lead.get("name"),
-                            data.get("client_email") or lead.get("from_email"),
-                            data.get("partner_name"), data.get("context_snippet"), now, now,
-                        ))
-                        print(f"[appt] Confirmation detected — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
+                detected_list = detect_confirmation(messages)
+                for data in detected_list:
+                    proposed_dt = data.get("proposed_datetime")
+                    # Dedup by (thread_id, proposed_datetime) — same appointment
+                    # on same thread won't be double-inserted across scans
+                    existing = conn.execute("""
+                        SELECT id, status FROM appointments
+                        WHERE thread_id=? AND proposed_datetime=? AND status != 'deleted'
+                        ORDER BY id DESC LIMIT 1
+                    """, (thread_id, proposed_dt)).fetchone()
+
+                    if existing:
+                        if existing["status"] == "pending":
+                            # Update with latest details from new reply
+                            conn.execute("""
+                                UPDATE appointments SET
+                                  meeting_type=COALESCE(?,meeting_type),
+                                  proposed_date_text=COALESCE(?,proposed_date_text),
+                                  proposed_address=COALESCE(?,proposed_address),
+                                  client_name=COALESCE(?,client_name),
+                                  client_email=COALESCE(?,client_email),
+                                  partner_name=COALESCE(?,partner_name),
+                                  context_snippet=?,
+                                  updated_at=?
+                                WHERE id=?
+                            """, (
+                                data.get("meeting_type"),
+                                data.get("proposed_date_text"), data.get("proposed_address"),
+                                data.get("client_name"), data.get("client_email"),
+                                data.get("partner_name"), data.get("context_snippet"),
+                                now, existing["id"]
+                            ))
+                            print(f"[appt] Updated pending appt {existing['id']}: {data.get('context_snippet','')[:60]}")
+                        else:
+                            # Already accepted/rejected — skip this datetime
+                            print(f"[appt] Skipping already-{existing['status']} appt for {proposed_dt}")
+                        continue
+
+                    # New appointment — insert
+                    conn.execute("""
+                        INSERT INTO appointments
+                          (lead_id, thread_id, detected_at, status, meeting_type,
+                           proposed_datetime, proposed_date_text, proposed_address,
+                           client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'inbox',?,?)
+                    """, (
+                        lead["id"], thread_id, now, "pending",
+                        data.get("meeting_type"), data.get("proposed_datetime"),
+                        data.get("proposed_date_text"), data.get("proposed_address"),
+                        data.get("client_name") or lead.get("name"),
+                        data.get("client_email") or lead.get("from_email"),
+                        data.get("partner_name"), data.get("context_snippet"), now, now,
+                    ))
+                    print(f"[appt] New confirmation — lead {lead['id']}: {data.get('context_snippet','')[:60]}")
+
+                if detected_list:
                     conn.commit()
                     continue  # don't double-insert as inquiry
 
             # Availability inquiry (client asking about times/slots)
             if is_inquiry:
+                # Dedup: skip if any non-deleted availability_inquiry already exists for this thread
+                existing_inquiry = conn.execute("""
+                    SELECT id FROM appointments
+                    WHERE thread_id=? AND meeting_type='availability_inquiry' AND status != 'deleted'
+                    LIMIT 1
+                """, (thread_id,)).fetchone()
+                if existing_inquiry:
+                    continue
+
                 data = detect_availability_inquiry(messages)
                 if data:
                     conn.execute("""
@@ -326,29 +341,37 @@ def _scan_confirmations():
             if existing:
                 continue
             messages = gm.get_thread_messages(creds, thread_id)
-            data     = detect_confirmation(messages)
-            if not data:
+            detected_list = detect_confirmation(messages)
+            if not detected_list:
                 continue
             # Try to link to a lead via thread_id
             lead_row = conn.execute(
                 "SELECT id FROM leads WHERE gmail_thread_id=?", (thread_id,)
             ).fetchone()
             lead_id = lead_row["id"] if lead_row else None
-            conn.execute("""
-                INSERT INTO appointments
-                  (lead_id, thread_id, detected_at, status, meeting_type,
-                   proposed_datetime, proposed_date_text, proposed_address,
-                   client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'sent',?,?)
-            """, (
-                lead_id, thread_id, now, "pending",
-                data.get("meeting_type"), data.get("proposed_datetime"),
-                data.get("proposed_date_text"), data.get("proposed_address"),
-                data.get("client_name"), data.get("client_email"),
-                data.get("partner_name"), data.get("context_snippet"), now, now,
-            ))
+            for data in detected_list:
+                proposed_dt = data.get("proposed_datetime")
+                dup = conn.execute("""
+                    SELECT id FROM appointments
+                    WHERE thread_id=? AND proposed_datetime=? AND status != 'deleted' LIMIT 1
+                """, (thread_id, proposed_dt)).fetchone()
+                if dup:
+                    continue
+                conn.execute("""
+                    INSERT INTO appointments
+                      (lead_id, thread_id, detected_at, status, meeting_type,
+                       proposed_datetime, proposed_date_text, proposed_address,
+                       client_name, client_email, partner_name, context_snippet, source, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'sent',?,?)
+                """, (
+                    lead_id, thread_id, now, "pending",
+                    data.get("meeting_type"), data.get("proposed_datetime"),
+                    data.get("proposed_date_text"), data.get("proposed_address"),
+                    data.get("client_name"), data.get("client_email"),
+                    data.get("partner_name"), data.get("context_snippet"), now, now,
+                ))
+                print(f"[appt] Detected from sent mail thread {thread_id}: {data.get('context_snippet', '')[:60]}")
             conn.commit()
-            print(f"[appt] Detected confirmation from sent mail thread {thread_id}: {data.get('context_snippet', '')[:60]}")
     except Exception as e:
         print(f"[appt] Sent scan error: {e}")
 
@@ -369,7 +392,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.14"
+APP_VERSION = "0.4.15"
 
 @app.get("/health")
 async def health():

@@ -335,9 +335,12 @@ def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, 
     return resolved_iso, resolved_text
 
 
-def detect_confirmation(thread_messages: list[dict]) -> dict | None:
+def detect_confirmation(thread_messages: list[dict]) -> list[dict]:
     """
-    Ask Claude if this thread contains a client agreeing to meet.
+    Ask Claude if this thread contains one or more client confirmations to meet.
+
+    Returns a LIST of confirmed appointments (supports multi-appointment threads,
+    e.g. client agrees to 2 open houses on different days).
 
     Intentionally lenient: if the client agrees to ANY day/time that was
     proposed (even just "Saturday works"), that counts. The agent will verify
@@ -349,7 +352,7 @@ def detect_confirmation(thread_messages: list[dict]) -> dict | None:
     to Claude — to prevent hallucination of wrong dates.
     """
     if not thread_messages:
-        return None
+        return []
 
     import datetime as _dt
     today     = _dt.date.today()
@@ -360,7 +363,7 @@ def detect_confirmation(thread_messages: list[dict]) -> dict | None:
         for m in thread_messages[-6:]
     ])
 
-    prompt = f"""Analyze this real estate email thread. Detect if the CLIENT has agreed to meet, see a property, or confirmed a time — even loosely.
+    prompt = f"""Analyze this real estate email thread. Detect ALL appointments the client has agreed to — there may be more than one (e.g. they agreed to two open houses on different days).
 
 TODAY'S DATE: {today_str}
 
@@ -371,30 +374,33 @@ IMPORTANT RULES:
 - "Saturday works", "that works for me", "sounds good", "see you then", "confirmed", "I'll be there" — ALL count as confirmations.
 - The client does NOT need to repeat the exact time — if an agent proposed a time and the client agreed to the day, use the agent's proposed time.
 - A DAY confirmation without an exact time still counts — extract whatever time the agent proposed.
-- Only return confirmed=false if the client is STILL asking questions, expressing uncertainty, or hasn't responded to a proposed time yet.
+- If the client confirmed MULTIPLE appointments (e.g. "Saturday AND Sunday both work"), return ALL of them as separate items in the array.
 - For proposed_datetime: use YYYY-MM-DDTHH:MM:SS format based on TODAY ({today_str}). If the client said "Saturday", compute the next Saturday from today's date.
 - For proposed_date_text: use the day name ONLY (e.g. "Saturday at 2:00 PM") — do NOT include a month/date number. Python will resolve the exact date.
 
-Respond with ONLY a JSON object, no other text:
-{{
-  "confirmed": true or false,
-  "meeting_type": "showing" | "call" | "open_house" | "coffee" | "other" | null,
-  "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null,
-  "proposed_date_text": "day and time only, e.g. 'Saturday at 2:00 PM' — no month or date number",
-  "proposed_address": "property address" or null,
-  "client_name": "client first/full name" or null,
-  "client_email": "client email address" or null,
-  "partner_name": "partner or spouse if mentioned" or null,
-  "context_snippet": "one sentence: what was agreed",
-  "confidence": "high" | "medium" | "low"
-}}
+Respond with ONLY a JSON array (even if just one appointment), no other text:
+[
+  {{
+    "confirmed": true or false,
+    "meeting_type": "showing" | "call" | "open_house" | "coffee" | "other" | null,
+    "proposed_datetime": "YYYY-MM-DDTHH:MM:SS" or null,
+    "proposed_date_text": "day and time only, e.g. 'Saturday at 2:00 PM' — no month or date number",
+    "proposed_address": "property address" or null,
+    "client_name": "client first/full name" or null,
+    "client_email": "client email address" or null,
+    "partner_name": "partner or spouse if mentioned" or null,
+    "context_snippet": "one sentence: what was agreed",
+    "confidence": "high" | "medium" | "low"
+  }}
+]
 
+If nothing is confirmed, return an empty array: []
 confidence="low" only if you genuinely cannot tell if the client agreed to anything."""
 
     import json
     response = _claude().messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=450,
+        max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -403,28 +409,37 @@ confidence="low" only if you genuinely cannot tell if the client agreed to anyth
         text = text.split("```")[1].replace("json", "").strip()
 
     try:
-        data = json.loads(text)
+        raw = json.loads(text)
+        # Accept both array and legacy single-object response
+        if isinstance(raw, dict):
+            raw = [raw]
+        elif not isinstance(raw, list):
+            raw = []
     except Exception as e:
         print(f"[ai] detect_confirmation JSON parse error: {e} — raw: {text[:200]}")
-        return None
+        return []
 
-    if not data.get("confirmed"):
-        return None
-    if data.get("confidence") == "low":
-        print(f"[ai] detect_confirmation: low confidence, skipping — {data.get('context_snippet','')[:80]}")
-        return None
+    results = []
+    for data in raw:
+        if not data.get("confirmed"):
+            continue
+        if data.get("confidence") == "low":
+            print(f"[ai] detect_confirmation: low confidence, skipping — {data.get('context_snippet','')[:80]}")
+            continue
 
-    # ── Resolve day-of-week to actual date in Python — no hallucination ──────
-    corrected_dt, corrected_text = _resolve_day_reference(
-        data.get("proposed_date_text", ""),
-        data.get("proposed_datetime"),
-    )
-    data["proposed_datetime"]  = corrected_dt
-    data["proposed_date_text"] = corrected_text
+        # ── Resolve day-of-week to actual date in Python — no hallucination ──────
+        corrected_dt, corrected_text = _resolve_day_reference(
+            data.get("proposed_date_text", ""),
+            data.get("proposed_datetime"),
+        )
+        data["proposed_datetime"]  = corrected_dt
+        data["proposed_date_text"] = corrected_text
 
-    print(f"[ai] detect_confirmation: confirmed ({data.get('confidence')}) — {data.get('context_snippet','')[:80]}")
-    print(f"[ai]   → {data['proposed_date_text']} | {data['proposed_datetime']}")
-    return data
+        print(f"[ai] detect_confirmation: confirmed ({data.get('confidence')}) — {data.get('context_snippet','')[:80]}")
+        print(f"[ai]   → {data['proposed_date_text']} | {data['proposed_datetime']}")
+        results.append(data)
+
+    return results
 
 
 def detect_availability_inquiry(thread_messages: list[dict]) -> dict | None:
