@@ -438,7 +438,7 @@ confidence="low" only if you genuinely cannot tell if the client agreed to anyth
     return results
 
 
-def detect_availability_inquiry(thread_messages: list[dict]) -> dict | None:
+def detect_availability_inquiry(thread_messages: list[dict]) -> Optional[dict]:
     """
     Ask Claude if this thread contains a client asking about available times/slots.
     Returns extracted data dict or None if not an availability inquiry.
@@ -493,7 +493,7 @@ General interest without a scheduling request does NOT count."""
     return data
 
 
-def _build_avail_text(avail_raw: str | None) -> str:
+def _build_avail_text(avail_raw: Optional[str]) -> str:
     """Format availability windows from JSON config into a readable string."""
     if not avail_raw:
         return "weekdays 9am–6pm"
