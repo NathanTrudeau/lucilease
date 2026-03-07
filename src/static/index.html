@@ -1408,7 +1408,7 @@
     if (name === 'clients')    loadClients();
     if (name === 'properties') loadProperties();
     if (name === 'archive')    loadArchive();
-    if (name === 'sent')       { loadSent(); const sb = document.getElementById('sent-badge'); if (sb) { sb.textContent = '0'; sb.className = 'badge zero'; } }
+    if (name === 'sent')       { loadSent().then(() => { _setSentSeen(_sentCache.length); _updateSentBadge(_sentCache.length); }); }
     if (name === 'calendar')   loadCalendarEvents();
     if (name === 'dashboard')  loadAppointments();
     if (name === 'settings')   { setPollDisplay(); loadFilterMode(); }
@@ -2689,7 +2689,22 @@
   }
 
   // ── Sent tab ──────────────────────────────────────────────────────────────
+  // Badge shows new sends since the user last opened the Sent tab.
+  // Persisted in localStorage so it survives page reloads.
   let _sentCache = [];
+
+  function _getSentSeen()  { return parseInt(localStorage.getItem('ll-sent-seen') || '0'); }
+  function _setSentSeen(n) { localStorage.setItem('ll-sent-seen', String(n)); }
+
+  function _updateSentBadge(total) {
+    const seen  = _getSentSeen();
+    const delta = Math.max(0, total - seen);
+    const badge = document.getElementById('sent-badge');
+    if (!badge) return;
+    badge.textContent = delta || '0';
+    badge.className = 'badge' + (delta > 0 ? '' : ' zero');
+  }
+
   async function loadSent() {
     const container = document.getElementById('sent-container');
     if (!container) return;
@@ -2698,9 +2713,7 @@
       _sentCache = await r.json();
       const sent = _sentCache;
 
-      const badge = document.getElementById('sent-badge');
-      badge.textContent = sent.length;
-      badge.className = 'badge' + (sent.length > 0 ? '' : ' zero');
+      _updateSentBadge(sent.length);
       const countEl = document.getElementById('sent-count');
       if (countEl) countEl.textContent = sent.length ? `${sent.length} sent` : '';
 
