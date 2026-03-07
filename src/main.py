@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import os
 import pathlib
+import re as _re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -49,8 +50,6 @@ def get_poll_secs() -> int:
 
 
 # ── Background polling ────────────────────────────────────────────────────────
-
-import re as _re
 
 _DATETIME_PATTERNS = [
     # "Monday March 10 at 2pm", "Tuesday, March 10th at 10:30am"
@@ -387,7 +386,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Lucilease", version=APP_VERSION, lifespan=lifespan)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -451,7 +450,6 @@ async def auth_status():
 
 @app.get("/api/stats")
 async def stats():
-    import datetime as _dt
     conn = get_conn()
     cur  = conn.cursor()
     leads_new   = cur.execute("SELECT COUNT(*) FROM leads WHERE status IN ('new','drafted')").fetchone()[0]
@@ -460,7 +458,7 @@ async def stats():
     properties  = cur.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
 
     # 7-day delta: how many new rows appeared in the last 7 days
-    cutoff = (_dt.datetime.utcnow() - _dt.timedelta(days=7)).isoformat() + "Z"
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat() + "Z"
     leads_7d     = cur.execute("SELECT COUNT(*) FROM leads     WHERE first_seen_at >= ?",  (cutoff,)).fetchone()[0]
     clients_7d   = cur.execute("SELECT COUNT(*) FROM clients   WHERE created_at    >= ?",  (cutoff,)).fetchone()[0]
     props_7d     = cur.execute("SELECT COUNT(*) FROM properties WHERE created_at   >= ?",  (cutoff,)).fetchone()[0]
@@ -1336,8 +1334,7 @@ async def accept_appointment(appt_id: int, body: dict = None):
     confirmed_date_text = appt.get("proposed_date_text") or dt_str or "the scheduled time"
     if dt_str:
         try:
-            import datetime as _dt2
-            naive = _dt2.datetime.fromisoformat(dt_str.replace("Z", "").split("+")[0])
+            naive = datetime.datetime.fromisoformat(dt_str.replace("Z", "").split("+")[0])
             confirmed_date_text = naive.strftime("%A, %B %-d at %-I:%M %p")
         except Exception:
             pass
@@ -1551,8 +1548,6 @@ async def delete_appointment(appt_id: int):
 @app.get("/api/calendar/events")
 async def get_calendar_events():
     """Return merged events: accepted appointments from DB + Google Calendar (if connected)."""
-    import datetime as _dt
-
     # Always pull accepted appointments from local DB
     conn = get_conn()
     rows = conn.execute(

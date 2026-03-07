@@ -146,9 +146,6 @@ def _save_token(creds: Credentials) -> None:
     TOKEN_FILE.write_text(creds.to_json())
 
 
-# ── Gmail polling ─────────────────────────────────────────────────────────────
-
-# ── Housing relevance filter ──────────────────────────────────────────────────
 # ── Inbox filter ─────────────────────────────────────────────────────────────
 #
 # PHILOSOPHY: err heavily on the side of letting emails through.
@@ -422,8 +419,6 @@ def poll_inbox(label_ids: list[str] = None) -> int:
             "SELECT value FROM config WHERE key='last_poll_at'"
         ).fetchone()
         if last_poll_row and last_poll_row["value"]:
-            import email.utils as _eu
-            # Gmail `after:` uses Unix timestamp
             import datetime as _dt
             lp = _dt.datetime.fromisoformat(last_poll_row["value"].replace("Z",""))
             after_ts = int(lp.timestamp())

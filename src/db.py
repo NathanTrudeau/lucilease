@@ -117,7 +117,6 @@ def init_db():
         "status":    "ALTER TABLE drafts ADD COLUMN status TEXT",
         "error_msg": "ALTER TABLE drafts ADD COLUMN error_msg TEXT",
         "updated_at":"ALTER TABLE drafts ADD COLUMN updated_at TEXT",
-        "is_new":    "ALTER TABLE drafts ADD COLUMN is_new INTEGER NOT NULL DEFAULT 0",
     }
     for col, sql in migrations.items():
         if col not in existing_cols:

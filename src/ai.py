@@ -5,8 +5,12 @@ Given a lead and the agent's profile + property list, generates a
 personalized, professional reply and saves it as a Gmail draft.
 """
 
+import datetime
+import json
 import os
+import re
 from typing import Optional
+
 import anthropic
 
 from db import get_conn
@@ -32,8 +36,7 @@ def get_agent_profile() -> dict:
 
 
 def save_agent_profile(profile: dict):
-    from datetime import datetime
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     for key, value in profile.items():
         conn.execute("""
@@ -51,7 +54,6 @@ def assess_thread_tone(thread_text: str) -> dict:
     Quick Claude check: is this thread angry, confusing, or off-topic?
     Returns {"flag": None|"angry"|"confusing"|"off_topic", "reason": str}
     """
-    import json as _j
     prompt = f"""Briefly assess this email or thread. Respond with ONLY a JSON object:
 {{
   "flag": null or "angry" or "confusing" or "off_topic",
@@ -76,7 +78,7 @@ Email/thread:
         text = response.content[0].text.strip()
         if "```" in text:
             text = text.split("```")[1].replace("json", "").strip()
-        return _j.loads(text)
+        return json.loads(text)
     except Exception as e:
         print(f"[ai] assess_thread_tone error: {e}")
         return {"flag": None, "reason": None}
@@ -151,7 +153,6 @@ def draft_reply(lead_id: int) -> dict:
     avail_text = ""
     if avail_raw:
         try:
-            import json
             windows = json.loads(avail_raw)
             enabled = [w for w in windows if w.get("enabled")]
             if enabled:
@@ -227,7 +228,7 @@ Rules:
     subject = f"Re: {lead.get('subject') or 'Your Inquiry'}"
 
     # Save draft to DB
-    now = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     cursor = conn.execute("""
         INSERT INTO drafts (lead_id, to_email, subject, body, created_at)
@@ -276,11 +277,8 @@ def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, 
     Returns (corrected_proposed_datetime, corrected_proposed_date_text).
     This is purely deterministic Python — no AI involvement — so it cannot hallucinate.
     """
-    import datetime as _dt
-    import re
-
-    today = _dt.date.today()
-    now   = _dt.datetime.now()
+    today = datetime.date.today()
+    now   = datetime.datetime.now()
 
     DOW = {
         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -298,7 +296,7 @@ def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, 
     days_ahead = (target_dow - today.weekday()) % 7
     if days_ahead == 0:
         days_ahead = 7  # "Saturday" means NEXT Saturday, not today
-    next_day = today + _dt.timedelta(days=days_ahead)
+    next_day = today + datetime.timedelta(days=days_ahead)
 
     # Extract time — prefer text over proposed_datetime (text comes from agent's email,
     # proposed_datetime time component is often hallucinated by Claude)
@@ -318,12 +316,12 @@ def _resolve_day_reference(day_text: str, proposed_datetime: str) -> tuple[str, 
     elif proposed_datetime:
         # Fall back to proposed_datetime only if no time found in text
         try:
-            parsed = _dt.datetime.fromisoformat(proposed_datetime.replace("Z", "").replace("+00:00", ""))
+            parsed = datetime.datetime.fromisoformat(proposed_datetime.replace("Z", "").replace("+00:00", ""))
             hour, minute = parsed.hour, parsed.minute
         except Exception:
             pass
 
-    resolved_dt = _dt.datetime(next_day.year, next_day.month, next_day.day, hour, minute, 0)
+    resolved_dt = datetime.datetime(next_day.year, next_day.month, next_day.day, hour, minute, 0)
     resolved_iso = resolved_dt.isoformat()
 
     # Format human-readable: "Saturday, March 7 at 10:00 AM"
@@ -354,8 +352,7 @@ def detect_confirmation(thread_messages: list[dict]) -> list[dict]:
     if not thread_messages:
         return []
 
-    import datetime as _dt
-    today     = _dt.date.today()
+    today     = datetime.date.today()
     today_str = today.strftime("%A, %B %-d, %Y")  # e.g. "Friday, March 6, 2026"
 
     thread_text = "\n\n---\n\n".join([
@@ -397,7 +394,6 @@ Respond with ONLY a JSON array (even if just one appointment), no other text:
 If nothing is confirmed, return an empty array: []
 confidence="low" only if you genuinely cannot tell if the client agreed to anything."""
 
-    import json
     response = _claude().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=600,
@@ -475,7 +471,6 @@ Respond with ONLY a JSON object, no other text:
 Set is_inquiry=true only if the client is actively requesting to schedule or asking about times.
 General interest without a scheduling request does NOT count."""
 
-    import json
     response = _claude().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=350,
@@ -498,15 +493,31 @@ General interest without a scheduling request does NOT count."""
     return data
 
 
+def _build_avail_text(avail_raw: str | None) -> str:
+    """Format availability windows from JSON config into a readable string."""
+    if not avail_raw:
+        return "weekdays 9am–6pm"
+    try:
+        windows = json.loads(avail_raw)
+        enabled = [w for w in windows if w.get("enabled")]
+        if not enabled:
+            return "weekdays 9am–6pm"
+        DAY_SHORT = {"monday":"Mon","tuesday":"Tue","wednesday":"Wed",
+                     "thursday":"Thu","friday":"Fri","saturday":"Sat","sunday":"Sun"}
+        return ", ".join(
+            f"{DAY_SHORT.get(w['day'], w['day'])} {w['start']}–{w['end']}"
+            for w in enabled
+        )
+    except Exception:
+        return "weekdays 9am–6pm"
+
+
 def draft_availability_options(appointment_id: int) -> dict:
     """
     Claude drafts a reply offering 2-3 specific available time slots to a client
     who asked about scheduling. Frames it as proactive offer, not an apology.
     Saves as local draft + pushes to Gmail.
     """
-    import json as _json
-    import datetime as _dt
-
     conn = get_conn()
     appt = conn.execute("SELECT * FROM appointments WHERE id=?", (appointment_id,)).fetchone()
     cfg  = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
@@ -519,26 +530,11 @@ def draft_availability_options(appointment_id: int) -> dict:
     profile    = get_agent_profile()
     agent_name = profile.get("agent_name", "Your Agent")
     timezone   = cfg.get("timezone", "America/Los_Angeles")
-    avail_raw  = cfg.get("availability_windows")
-
-    avail_text = "weekdays 9am–6pm"
-    if avail_raw:
-        try:
-            windows = _json.loads(avail_raw)
-            enabled = [w for w in windows if w.get("enabled")]
-            DAY_SHORT = {"monday":"Mon","tuesday":"Tue","wednesday":"Wed",
-                         "thursday":"Thu","friday":"Fri","saturday":"Sat","sunday":"Sun"}
-            if enabled:
-                avail_text = ", ".join(
-                    f"{DAY_SHORT.get(w['day'], w['day'])} {w['start']}–{w['end']}"
-                    for w in enabled
-                )
-        except Exception:
-            pass
+    avail_text = _build_avail_text(cfg.get("availability_windows"))
 
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
     signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
-    today_str   = _dt.datetime.now().strftime("%A, %B %d, %Y")
+    today_str   = datetime.datetime.now().strftime("%A, %B %d, %Y")
     client_name = appt.get("client_name") or "there"
     address     = appt.get("proposed_address") or "the property"
 
@@ -570,7 +566,7 @@ Rules:
         body = body + "\n\n" + signature
 
     subject = f"Re: {(appt.get('context_snippet') or 'Scheduling')[:60]}"
-    now     = _dt.datetime.utcnow().isoformat() + "Z"
+    now     = datetime.datetime.utcnow().isoformat() + "Z"
 
     conn = get_conn()
     cursor = conn.execute("""
@@ -603,9 +599,6 @@ def draft_alternative_times(appointment_id: int) -> dict:
     based on the agent's availability windows and the blocked proposed time.
     Saves as a local draft and pushes to Gmail if connected.
     """
-    import json as _json
-    import datetime as _dt
-
     conn = get_conn()
     appt = conn.execute("SELECT * FROM appointments WHERE id=?", (appointment_id,)).fetchone()
     cfg  = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM config").fetchall()}
@@ -615,29 +608,14 @@ def draft_alternative_times(appointment_id: int) -> dict:
         raise ValueError(f"Appointment {appointment_id} not found")
     appt = dict(appt)
 
-    profile   = get_agent_profile()
+    profile    = get_agent_profile()
     agent_name = profile.get("agent_name", "Your Agent")
-    timezone  = cfg.get("timezone", "America/Los_Angeles")
-    avail_raw = cfg.get("availability_windows")
-
-    avail_text = "weekdays 9am–6pm"
-    if avail_raw:
-        try:
-            windows = _json.loads(avail_raw)
-            enabled = [w for w in windows if w.get("enabled")]
-            DAY_SHORT = {"monday":"Mon","tuesday":"Tue","wednesday":"Wed",
-                         "thursday":"Thu","friday":"Fri","saturday":"Sat","sunday":"Sun"}
-            if enabled:
-                avail_text = ", ".join(
-                    f"{DAY_SHORT.get(w['day'], w['day'])} {w['start']}–{w['end']}"
-                    for w in enabled
-                )
-        except Exception:
-            pass
+    timezone   = cfg.get("timezone", "America/Los_Angeles")
+    avail_text = _build_avail_text(cfg.get("availability_windows"))
 
     sig_enabled = profile.get("agent_signature_enabled", "false") == "true"
     signature   = profile.get("agent_signature", "").strip() if sig_enabled else ""
-    today_str   = _dt.datetime.now().strftime("%A, %B %d, %Y")
+    today_str   = datetime.datetime.now().strftime("%A, %B %d, %Y")
 
     proposed = appt.get("proposed_date_text") or appt.get("proposed_datetime") or "the proposed time"
 
@@ -667,7 +645,7 @@ Rules:
         body = body + "\n\n" + signature
 
     subject = f"Re: {(appt.get('context_snippet') or 'Our Appointment')[:60]}"
-    now     = _dt.datetime.utcnow().isoformat() + "Z"
+    now     = datetime.datetime.utcnow().isoformat() + "Z"
 
     conn = get_conn()
     cursor = conn.execute("""
@@ -750,12 +728,11 @@ STRICT RULES — violating these means the email is wrong:
         lines = [l.strip() for l in prose.split("\n") if l.strip()]
 
         # Safety check: if Claude snuck a time/day reference into the prose, strip it
-        import re as _re
-        TIME_PATTERN = _re.compile(
+        TIME_PATTERN = re.compile(
             r'\b(\d{1,2}(:\d{2})?\s*(am|pm|AM|PM)|'
             r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
             r'january|february|march|april|may|june|july|august|september|october|november|december)'
-            r')\b', _re.IGNORECASE
+            r')\b', re.IGNORECASE
         )
         lines = [l for l in lines if not TIME_PATTERN.search(l)]
 
