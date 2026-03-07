@@ -19,7 +19,7 @@ import gmail as gm
 import calendar_service as cal
 
 STATIC    = pathlib.Path(__file__).parent / "static"
-POLL_SECS = int(os.getenv("POLL_SECONDS", "300"))
+POLL_SECS = int(os.getenv("POLL_SECONDS", "600"))
 
 def _save_last_poll_time():
     """Persist current UTC time as last_poll_at so next poll only fetches new mail."""
@@ -392,7 +392,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.17"
+APP_VERSION = "0.4.18"
 
 @app.get("/health")
 async def health():
@@ -1199,7 +1199,7 @@ async def set_filter_mode(body: dict):
 @app.post("/api/config/poll")
 async def save_poll_interval(body: dict):
     """Save user-defined poll interval (seconds). Minimum 60s."""
-    secs = max(60, int(body.get("poll_seconds", 300)))
+    secs = max(60, int(body.get("poll_seconds", 600)))
     now  = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     conn.execute(
@@ -1443,13 +1443,18 @@ async def send_confirmation_email(appt_id: int, body: dict = None):
         except Exception as e:
             return {"ok": False, "error": f"Email send failed: {e}"}
 
-    # Write to Sent tab
+    # Write to Sent tab and ensure lead is marked replied
     now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     conn.execute(
         "INSERT INTO drafts (lead_id, to_email, subject, body, status, created_at) VALUES (?,?,?,?,?,?)",
         (lead_id, to_email, subject, email_body, "sent", now)
     )
+    if lead_id:
+        conn.execute(
+            "UPDATE leads SET status='replied', updated_at=? WHERE id=? AND status != 'replied'",
+            (now, lead_id)
+        )
     conn.commit()
     conn.close()
 

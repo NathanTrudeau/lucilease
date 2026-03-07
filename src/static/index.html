@@ -545,11 +545,11 @@
     <span class="status-dot" id="status-dot"></span>
     <span id="status-text">Checking...</span>
     <div style="margin-top:10px;display:flex;gap:8px">
-      <a href="https://mail.google.com" target="_blank" title="Open Gmail"
+      <a id="sidebar-gmail-link" href="https://mail.google.com" target="_blank" title="Open Gmail"
          style="font-size:11px;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:3px;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid var(--border)">
         📧 Gmail
       </a>
-      <a href="https://calendar.google.com" target="_blank" title="Open Google Calendar"
+      <a id="sidebar-cal-link" href="https://calendar.google.com" target="_blank" title="Open Google Calendar"
          style="font-size:11px;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:3px;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid var(--border)">
         📅 Calendar
       </a>
@@ -1314,13 +1314,13 @@
         <div class="setting-row">
           <div>
             <div class="setting-label">Poll Interval</div>
-            <div class="setting-desc">How often Lucilease checks Gmail (minimum 60s)</div>
+            <div class="setting-desc">How often Lucilease checks Gmail (minimum 1 minute)</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            <input type="number" id="poll-interval-input" min="60" max="3600" step="60"
-              style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;text-align:center"
-              placeholder="300" />
-            <span style="font-size:12px;color:var(--muted)">seconds</span>
+            <input type="number" id="poll-interval-input" min="1" max="60" step="1"
+              style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;text-align:center"
+              placeholder="10" />
+            <span style="font-size:12px;color:var(--muted)">minutes</span>
             <button class="secondary" onclick="savePollInterval()" style="font-size:12px;padding:6px 12px">Save</button>
           </div>
         </div>
@@ -1408,7 +1408,7 @@
     if (name === 'clients')    loadClients();
     if (name === 'properties') loadProperties();
     if (name === 'archive')    loadArchive();
-    if (name === 'sent')       loadSent();
+    if (name === 'sent')       { loadSent(); const sb = document.getElementById('sent-badge'); if (sb) { sb.textContent = '0'; sb.className = 'badge zero'; } }
     if (name === 'calendar')   loadCalendarEvents();
     if (name === 'dashboard')  loadAppointments();
     if (name === 'settings')   { setPollDisplay(); loadFilterMode(); }
@@ -1416,18 +1416,28 @@
 
   // ── Theme ─────────────────────────────────────────────────────────────────
   const SOFT_COLORS  = [
-    { name: 'Lavender', accent: '#c4b5fd', accent2: '#ddd6fe' },
-    { name: 'Sky',      accent: '#93c5fd', accent2: '#bfdbfe' },
-    { name: 'Mint',     accent: '#6ee7b7', accent2: '#a7f3d0' },
-    { name: 'Peach',    accent: '#fca5a5', accent2: '#fecaca' },
-    { name: 'Rose',     accent: '#f9a8d4', accent2: '#fbcfe8' },
+    { name: 'Lavender',    accent: '#a78bfa', accent2: '#c4b5fd' },
+    { name: 'Sky',         accent: '#60a5fa', accent2: '#93c5fd' },
+    { name: 'Mint',        accent: '#34d399', accent2: '#6ee7b7' },
+    { name: 'Peach',       accent: '#f87171', accent2: '#fca5a5' },
+    { name: 'Rose',        accent: '#f472b6', accent2: '#f9a8d4' },
+    { name: 'Amber',       accent: '#f59e0b', accent2: '#fcd34d' },
+    { name: 'Slate Blue',  accent: '#818cf8', accent2: '#a5b4fc' },
+    { name: 'Sage',        accent: '#4ade80', accent2: '#86efac' },
+    { name: 'Warm Sand',   accent: '#d97706', accent2: '#fbbf24' },
+    { name: 'Ice',         accent: '#67e8f9', accent2: '#a5f3fc' },
   ];
   const VIVID_COLORS = [
-    { name: 'Purple',   accent: '#6c63ff', accent2: '#a78bfa' },
-    { name: 'Blue',     accent: '#2563eb', accent2: '#60a5fa' },
-    { name: 'Emerald',  accent: '#059669', accent2: '#34d399' },
-    { name: 'Coral',    accent: '#e11d48', accent2: '#fb7185' },
-    { name: 'Teal',     accent: '#0891b2', accent2: '#22d3ee' },
+    { name: 'Purple',      accent: '#6c63ff', accent2: '#a78bfa' },
+    { name: 'Blue',        accent: '#2563eb', accent2: '#60a5fa' },
+    { name: 'Emerald',     accent: '#059669', accent2: '#34d399' },
+    { name: 'Coral',       accent: '#e11d48', accent2: '#fb7185' },
+    { name: 'Teal',        accent: '#0891b2', accent2: '#22d3ee' },
+    { name: 'Indigo',      accent: '#4338ca', accent2: '#818cf8' },
+    { name: 'Crimson',     accent: '#be123c', accent2: '#f43f5e' },
+    { name: 'Forest',      accent: '#166534', accent2: '#16a34a' },
+    { name: 'Deep Ocean',  accent: '#1e3a5f', accent2: '#2563eb' },
+    { name: 'Graphite',    accent: '#374151', accent2: '#6b7280' },
   ];
 
   function applyTheme(accent, accent2) {
@@ -1488,7 +1498,15 @@
         // Fetch account email
         const ar = await fetch('/api/gmail-account');
         const ad = await ar.json();
-        if (ad.email) acctEl.textContent = ad.email;
+        if (ad.email) {
+          acctEl.textContent = ad.email;
+          // Point sidebar links to the authenticated account
+          const enc = encodeURIComponent(ad.email);
+          const gLink = document.getElementById('sidebar-gmail-link');
+          const cLink = document.getElementById('sidebar-cal-link');
+          if (gLink) gLink.href = `https://mail.google.com/mail/u/${enc}/#inbox`;
+          if (cLink) cLink.href = `https://calendar.google.com/calendar/u/${enc}/r`;
+        }
 
         // Scope check — warn if token is missing permissions (e.g. re-auth needed)
         if (!d.scopes_ok && d.missing_scopes && d.missing_scopes.length) {
@@ -2299,9 +2317,9 @@
   // ── Poll interval ─────────────────────────────────────────────────────────
   function setPollDisplay() {
     fetch('/health').then(r => r.json()).then(d => {
-      const secs = d.poll_seconds || 300;
+      const secs = d.poll_seconds || 600;
       const input = document.getElementById('poll-interval-input');
-      if (input) input.value = secs;
+      if (input) input.value = Math.round(secs / 60);  // display in minutes
     }).catch(() => {});
   }
 
@@ -2350,8 +2368,9 @@
 
   async function savePollInterval() {
     const input = document.getElementById('poll-interval-input');
-    const secs  = Math.max(60, parseInt(input.value) || 300);
-    input.value = secs;
+    const mins  = Math.max(1, Math.min(60, parseInt(input.value) || 10));
+    const secs  = mins * 60;
+    input.value = mins;
     try {
       const r = await fetch('/api/config/poll', {
         method: 'POST',
@@ -2359,7 +2378,7 @@
         body: JSON.stringify({ poll_seconds: secs }),
       });
       const d = await r.json();
-      if (d.ok) showToast(`✅ Poll interval saved — every ${secs}s`);
+      if (d.ok) showToast(`✅ Poll interval saved — every ${mins} minute${mins !== 1 ? 's' : ''}`);
       else showToast('Failed to save poll interval', true);
     } catch(e) {
       showToast('Error: ' + e.message, true);
