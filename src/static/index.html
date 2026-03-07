@@ -1008,7 +1008,7 @@
 
       <!-- Quick Actions -->
       <div class="quick-actions">
-        <button class="ai-action" onclick="draftAll()" title="Auto-generate AI replies for all new inbox leads">⚡ Auto-Draft All [AI]</button>
+        <button class="ai-action" id="draft-all-dashboard-btn" onclick="draftAll()" title="Auto-generate AI replies for all new inbox leads">⚡ Auto-Draft All [AI]</button>
         <button class="secondary" onclick="openNewDraftModal()">+ New Draft</button>
         <button class="secondary" onclick="goToPage('inbox')">📬 Inbox</button>
         <button class="secondary" onclick="goToPage('calendar')">📅 Calendar</button>
@@ -1779,38 +1779,45 @@
   }
 
   // ── Draft All ─────────────────────────────────────────────────────────────
+  function _setDraftAllBtns(text, disabled) {
+    ['draft-all-btn', 'draft-all-dashboard-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text;
+      el.disabled = disabled;
+    });
+  }
+
   async function draftAll() {
-    const btn = document.getElementById('draft-all-btn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Auto-Drafting...';
+    _setDraftAllBtns('⏳ Auto-Drafting...', true);
     try {
       const r = await fetch('/api/leads?status=new');
       const leads = await r.json().then(l => l.filter(x => x.status === 'new'));
       if (!leads.length) {
         showToast('No new leads to draft');
-        btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; return;
+        _setDraftAllBtns('⚡ Auto-Draft All [AI]', false); return;
       }
       const total = leads.length;
       let done = 0;
-      btn.textContent = `⏳ Drafting 0 / ${total}…`;
+      _setDraftAllBtns(`⏳ Drafting 0 / ${total}…`, true);
 
       // Fire all in parallel but update counter as each one completes
       const results = await Promise.allSettled(
         leads.map(lead =>
           fetch(`/api/leads/${lead.id}/draft`, { method: 'POST' })
             .then(r => r.json())
-            .then(data => { done++; btn.textContent = `⏳ Drafting ${done} / ${total}…`; return data; })
+            .then(data => { done++; _setDraftAllBtns(`⏳ Drafting ${done} / ${total}…`, true); return data; })
         )
       );
       const succeeded = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
       const flagged   = results.filter(r => r.status === 'fulfilled' && r.value?.needs_review).length;
-      btn.textContent = `✅ ${succeeded} / ${total} Drafted [AI]`;
+      _setDraftAllBtns(`✅ ${succeeded} / ${total} Drafted [AI]`, true);
       showToast(`✅ ${succeeded} draft${succeeded !== 1 ? 's' : ''} created`);
       if (flagged) showToast(`⚠️ ${flagged} lead(s) flagged for review`, true);
       await Promise.all([loadDrafts(), loadLeads()]);
-      setTimeout(() => { btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false; }, 4000);
+      setTimeout(() => _setDraftAllBtns('⚡ Auto-Draft All [AI]', false), 4000);
     } catch(e) {
-      btn.textContent = '⚡ Auto-Draft All [AI]'; btn.disabled = false;
+      _setDraftAllBtns('⚡ Auto-Draft All [AI]', false);
     }
   }
 
@@ -3441,18 +3448,25 @@
 
         // Multi-client: show client list instead of single summary
         let titleHtml, descHtml = '';
+        // Helper: build contact line for a single event
+        function clientContactLine(c) {
+          const name  = c.client_name || (c.summary || '').replace(/^.*—\s*/, '').trim() || '';
+          const email = c.client_email ? `<span style="color:var(--accent2)">${c.client_email}</span>` : '';
+          const phone = c.client_phone ? `<span style="color:var(--muted)">${c.client_phone}</span>` : '';
+          const parts = [name, email, phone].filter(Boolean).join(' · ');
+          return parts ? `• ${parts}` : '';
+        }
+
         if (count > 1) {
-          // Extract client names from summary (e.g. "Showing — Mia Chen")
-          const names = g.clients.map(c => {
-            const m = (c.summary || '').match(/—\s*(.+)$/);
-            return m ? m[1].trim() : (c.summary || '');
-          }).filter(Boolean);
           const typeLabel = (g.summary || '').replace(/—.+$/, '').trim() || 'Appointment';
           titleHtml = `<div style="font-weight:600;font-size:14px;margin-bottom:6px">${typeLabel} <span style="font-size:12px;background:rgba(108,99,255,0.2);color:var(--accent2);padding:2px 8px;border-radius:10px">${count} clients</span></div>`;
-          descHtml = `<div style="font-size:12px;color:var(--muted);line-height:1.6">${names.map(n => `• ${n}`).join('<br>')}</div>`;
+          descHtml = `<div style="font-size:12px;color:var(--muted);line-height:1.9">${g.clients.map(clientContactLine).filter(Boolean).join('<br>')}</div>`;
         } else {
           titleHtml = `<div style="font-weight:600;font-size:14px;margin-bottom:4px">${g.summary || '(no title)'}</div>`;
-          if (g.description) descHtml = `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${g.description.slice(0,120)}${g.description.length>120?'…':''}</div>`;
+          const contactLine = clientContactLine(g);
+          if (contactLine) descHtml += `<div style="font-size:12px;color:var(--muted);margin-top:3px">${contactLine.replace(/^• /,'')}</div>`;
+          if (g.partner_name) descHtml += `<div style="font-size:11px;color:var(--muted);margin-top:2px">+ ${g.partner_name}</div>`;
+          if (!g.lucilease && g.description) descHtml += `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-line">${g.description.slice(0,120)}${g.description.length>120?'…':''}</div>`;
         }
 
         return `

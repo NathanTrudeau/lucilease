@@ -392,7 +392,7 @@ app = FastAPI(title="Lucilease", version="0.3.0", lifespan=lifespan)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "0.4.15"
+APP_VERSION = "0.4.16"
 
 @app.get("/health")
 async def health():
@@ -1352,13 +1352,18 @@ async def accept_appointment(appt_id: int, body: dict = None):
             cal_error = str(e)
             print(f"[appt] Calendar event creation failed: {e}")
 
-    # Mark appointment accepted in DB
+    # Mark appointment accepted in DB; mark lead as replied so it leaves inbox
     now = datetime.datetime.utcnow().isoformat() + "Z"
     conn = get_conn()
     conn.execute(
         "UPDATE appointments SET status='accepted', calendar_event_id=?, updated_at=? WHERE id=?",
         (calendar_event_id, now, appt_id)
     )
+    if appt.get("lead_id"):
+        conn.execute(
+            "UPDATE leads SET status='replied', updated_at=? WHERE id=? AND status != 'replied'",
+            (now, appt["lead_id"])
+        )
     conn.commit()
     conn.close()
 
@@ -1540,15 +1545,35 @@ async def get_calendar_events():
     ).fetchall()
     conn.close()
 
+    # Build lead_id → phone lookup in one query
+    lead_ids = [r["lead_id"] for r in rows if r["lead_id"]]
+    phone_map = {}
+    if lead_ids:
+        conn2 = get_conn()
+        for row in conn2.execute(
+            f"SELECT id, phone FROM leads WHERE id IN ({','.join('?'*len(lead_ids))})",
+            lead_ids
+        ).fetchall():
+            if row["phone"]:
+                phone_map[row["id"]] = row["phone"]
+        conn2.close()
+
     local_events = []
     for r in rows:
         r = dict(r)
+        phone = phone_map.get(r.get("lead_id")) or r.get("client_phone")
         local_events.append({
-            "summary":   f"{(r.get('meeting_type') or 'Appointment').replace('_',' ').title()} — {r.get('client_name') or r.get('client_email') or 'Client'}",
-            "start":     r.get("proposed_datetime"),
-            "location":  r.get("proposed_address") or "",
-            "lucilease": True,
-            "appt_id":   r.get("id"),
+            "summary":       f"{(r.get('meeting_type') or 'Appointment').replace('_',' ').title()} — {r.get('client_name') or r.get('client_email') or 'Client'}",
+            "start":         r.get("proposed_datetime"),
+            "end":           None,  # duration computed client-side from meeting_type
+            "location":      r.get("proposed_address") or "",
+            "lucilease":     True,
+            "appt_id":       r.get("id"),
+            "meeting_type":  r.get("meeting_type"),
+            "client_name":   r.get("client_name"),
+            "client_email":  r.get("client_email"),
+            "client_phone":  phone,
+            "partner_name":  r.get("partner_name"),
         })
 
     # Try to merge Google Calendar events
